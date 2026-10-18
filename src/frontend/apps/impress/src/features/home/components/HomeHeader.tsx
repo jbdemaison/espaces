@@ -5,6 +5,7 @@ import { Title } from '@/components/Title';
 import { Waffle } from '@/components/Waffle';
 import { useConfig } from '@/core';
 import { useCunninghamTheme } from '@/cunningham';
+import { EspacesLogo } from '@/features/header/components/EspacesLogo';
 import { LanguagePickerLegacy } from '@/features/language';
 import { useResponsiveStore } from '@/stores';
 
@@ -19,7 +20,6 @@ export const HomeHeader = () => {
   const { isSmallMobile } = useResponsiveStore();
   const { data: config } = useConfig();
 
-  const icon = config?.theme_customization?.header?.icon;
   const logo = config?.theme_customization?.header?.logo;
 
   return (
@@ -56,20 +56,8 @@ export const HomeHeader = () => {
           $position="relative"
           $height="fit-content"
         >
-          {icon && (
-            <Image
-              data-testid="header-icon-docs"
-              width={0}
-              height={0}
-              style={{
-                width: icon.width,
-                height: icon.height,
-              }}
-              priority
-              {...(({ withTitle: _, ...rest }) => rest)(icon)}
-            />
-          )}
-          {icon?.withTitle && <Title />}
+          <EspacesLogo size={40} />
+          <Title />
         </Box>
       </Box>
       <Box

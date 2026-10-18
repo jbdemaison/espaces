@@ -18,6 +18,8 @@ import {
   useTrans,
 } from '@/docs/doc-management';
 import { useLeftPanelStore } from '@/features/left-panel';
+import { useRoomPresence } from '@/features/rooms/api';
+import { RoomOccupants } from '@/features/rooms/components/RoomOccupants';
 import { useResponsiveStore } from '@/stores';
 
 import { useTreeItemActions } from '../hooks/useTreeItemActions';
@@ -113,6 +115,9 @@ const DocSubPageItemContent = (props: TreeViewNodeProps<Doc>) => {
   const { emoji, titleWithoutEmoji } = getEmojiAndTitle(doc.title || '');
   const displayTitle = titleWithoutEmoji || untitledDocument;
 
+  const isRoom = doc.kind === 'room';
+  const { data: occupants = [] } = useRoomPresence(doc.id, isRoom);
+
   const itemRef = useRef<HTMLAnchorElement>(null);
 
   const focusRow = useCallback(() => {
@@ -141,38 +146,6 @@ const DocSubPageItemContent = (props: TreeViewNodeProps<Doc>) => {
     isActive: node.isFocused,
     focusItem: focusRow,
   });
-
-  const afterCreate = (createdDoc: Doc) => {
-    const actualChildren = node.data.children ?? [];
-
-    if (actualChildren.length === 0) {
-      treeContext?.treeData
-        .handleLoadChildren(node?.data.value.id)
-        .then(() => {
-          node.open();
-
-          void router.push(`/docs/${createdDoc.id}`);
-
-          if (isMobile) {
-            closePanel();
-          }
-        })
-        .catch(console.error);
-    } else {
-      const newDoc = {
-        ...createdDoc,
-        children: [],
-        childrenCount: 0,
-        parentId: node.id,
-      };
-      treeContext?.treeData.addChild(node.data.value.id, newDoc);
-      node.open();
-      void router.push(`/docs/${createdDoc.id}`);
-      if (isMobile) {
-        closePanel();
-      }
-    }
-  };
 
   const isCurrentPage = router.query?.id === doc.id;
   const isDeleted = !!doc.deleted_at;
@@ -282,9 +255,9 @@ const DocSubPageItemContent = (props: TreeViewNodeProps<Doc>) => {
           }}
         />
         <Box
-          $direction="row"
-          $align="center"
-          $gap="xs"
+          $direction="column"
+          $justify="center"
+          $gap="0"
           $minHeight="24px"
           $minWidth="0"
           $width="100%"
@@ -293,13 +266,10 @@ const DocSubPageItemContent = (props: TreeViewNodeProps<Doc>) => {
           <Text $css={ItemTextCss} $size="sm">
             {displayTitle}
           </Text>
+          {isRoom && <RoomOccupants roomId={doc.id} occupants={occupants} />}
         </Box>
         {areActionsVisible && (
-          <DocTreeItemActions
-            doc={doc}
-            onOpenChange={onMenuOpenChange}
-            onCreateSuccess={afterCreate}
-          />
+          <DocTreeItemActions doc={doc} onOpenChange={onMenuOpenChange} />
         )}
       </TreeViewItem>
     </StyledLink>

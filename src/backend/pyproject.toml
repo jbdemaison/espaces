@@ -72,6 +72,7 @@ dependencies = [
     "sentry-sdk==2.71.0",
     "servestatic==4.3.4",
     "uvicorn==0.54.0",
+    "livekit-api==1.2.0",
 ]
 
 [project.urls]

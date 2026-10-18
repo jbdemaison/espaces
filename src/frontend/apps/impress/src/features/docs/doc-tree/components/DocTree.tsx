@@ -201,10 +201,46 @@ export const DocTree = ({ currentDoc }: DocTreeProps) => {
 
         .c__tree-view--container {
           z-index: 1;
-          margin-top: -10px;
+          margin-top: 6px;
+
+          /* Rooms with people connected are taller than the 34px rows the
+             tree library assumes, so the rows flow one after the other
+             instead of being placed at a fixed height. */
+          height: auto !important;
 
           .c__tree-view {
             overflow: hidden !important;
+            height: auto !important;
+
+            > div {
+              height: auto !important;
+            }
+
+            .c__tree-view--node,
+            .c__dnd--droppable,
+            .c__tree-view--row-content,
+            .c__tree-view--row a {
+              height: auto !important;
+              min-height: 32px;
+            }
+
+            .c__tree-view--node {
+              overflow: visible !important;
+            }
+
+            /* keep the icon next to the name, not centred on the people */
+            .c__tree-view--node:has([data-testid^='room-occupants-']) {
+              align-items: flex-start !important;
+              padding-top: 4px;
+              padding-bottom: 4px;
+            }
+
+            .c__tree-view--row {
+              position: relative !important;
+              top: auto !important;
+              height: auto !important;
+              min-height: 34px;
+            }
           }
         }
       `}

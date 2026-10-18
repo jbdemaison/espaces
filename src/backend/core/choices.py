@@ -47,6 +47,14 @@ class RoleChoices(PriorityTextChoices):
     OWNER = "owner", _("Owner")
 
 
+class DocumentKindChoices(TextChoices):
+    """Defines what a node of the document tree is used for."""
+
+    DOCUMENT = "document", _("Document")  # A regular collaborative document
+    FOLDER = "folder", _("Folder")  # A container whose accesses apply to its children
+    ROOM = "room", _("Room")  # A persistent video room, always a leaf of the tree
+
+
 PRIVILEGED_ROLES = [RoleChoices.ADMIN, RoleChoices.OWNER]
 COMMENTING_ROLES = [RoleChoices.COMMENTER, RoleChoices.EDITOR, *PRIVILEGED_ROLES]
 

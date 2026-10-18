@@ -190,23 +190,7 @@ export const DocTreeRoot = ({
         <Box $direction="row" $align="center" $width="100%">
           <SimpleDocItem doc={root} showDate={true} />
           {areActionsVisible && (
-            <DocTreeItemActions
-              doc={root}
-              onOpenChange={onMenuOpenChange}
-              onCreateSuccess={(createdDoc) => {
-                const newDoc = {
-                  ...createdDoc,
-                  children: [],
-                  childrenCount: 0,
-                  parentId: root.id,
-                };
-                treeContext.treeData.addChild(null, newDoc);
-
-                if (isMobile) {
-                  closePanel();
-                }
-              }}
-            />
+            <DocTreeItemActions doc={root} onOpenChange={onMenuOpenChange} />
           )}
         </Box>
       </StyledLink>

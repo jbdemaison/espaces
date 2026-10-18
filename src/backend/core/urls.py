@@ -8,6 +8,7 @@ from lasuite.oidc_resource_server.urls import urlpatterns as oidc_resource_serve
 from rest_framework.routers import DefaultRouter
 
 from core.api import viewsets
+from core.api.livekit_webhook import LiveKitWebhookView, UserStatusView
 from core.external_api import viewsets as external_api_viewsets
 
 # - Main endpoints
@@ -82,6 +83,17 @@ urlpatterns = [
         ),
     ),
     path(f"api/{settings.API_VERSION}/config/", viewsets.ConfigView.as_view()),
+    # Events of the LiveKit server, signed with the key it shares with us
+    path(
+        f"api/{settings.API_VERSION}/livekit/webhook/",
+        LiveKitWebhookView.as_view(),
+        name="livekit-webhook",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/user-status/",
+        UserStatusView.as_view(),
+        name="user-status",
+    ),
     # Public keys validating the tokens we issue to call external services.
     # Nested under "api/" because this is the only prefix routed to the backend
     # by the ingress, a root "/.well-known/" would be served by the frontend.

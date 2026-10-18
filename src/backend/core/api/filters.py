@@ -8,6 +8,7 @@ from django.utils.translation import gettext_lazy as _
 import django_filters
 
 from core import models
+from core.choices import DocumentKindChoices
 
 
 def remove_accents(value):
@@ -68,9 +69,13 @@ class ListDocumentFilter(DocumentFilter):
         method="filter_is_favorite", label=_("Favorite")
     )
 
+    kind = django_filters.MultipleChoiceFilter(
+        field_name="kind", choices=DocumentKindChoices.choices, label=_("Kind")
+    )
+
     class Meta:
         model = models.Document
-        fields = ["is_creator_me", "is_favorite", "title", "q"]
+        fields = ["is_creator_me", "is_favorite", "title", "q", "kind"]
 
     # pylint: disable=unused-argument
     def filter_is_creator_me(self, queryset, name, value):

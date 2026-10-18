@@ -102,3 +102,10 @@ SEARCH_URL=http://find:8000/api/v1.0/documents/search/
 SEARCH_INDEXER_QUERY_LIMIT=50
 
 CONVERSION_UPLOAD_ENABLED=true
+
+# Video rooms (LiveKit, started by "make run")
+# The browsers reach LiveKit on localhost, the backend through the docker network
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=devsecret-padded-to-be-long-enough-for-hs256
+LIVEKIT_API_URL=ws://localhost:7880
+LIVEKIT_INTERNAL_URL=http://livekit:7880

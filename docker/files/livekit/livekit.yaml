@@ -1,0 +1,14 @@
+# LiveKit for local development only: keys are public, never use this in production.
+port: 7880
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+  # The address given to browsers comes from the command line (LIVEKIT_NODE_IP in the
+  # compose file): Firefox ignores 127.0.0.1, so it must be the address of this computer.
+keys:
+  devkey: devsecret-padded-to-be-long-enough-for-hs256
+webhook:
+  api_key: devkey
+  urls:
+    - http://app-dev:8000/api/v1.0/livekit/webhook/

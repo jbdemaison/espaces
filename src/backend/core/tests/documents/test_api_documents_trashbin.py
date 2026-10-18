@@ -122,7 +122,9 @@ def test_api_documents_trashbin_format():
                 ),
                 "creator": str(user.id),
                 "depth": 1,
+                "emoji": "",
                 "excerpt": other_document_to_delete.excerpt,
+                "kind": "document",
                 "deleted_at": other_document_to_delete.ancestors_deleted_at.isoformat().replace(
                     "+00:00", "Z"
                 ),
@@ -184,7 +186,9 @@ def test_api_documents_trashbin_format():
                 "created_at": document.created_at.isoformat().replace("+00:00", "Z"),
                 "creator": str(document.creator.id),
                 "depth": 1,
+                "emoji": "",
                 "excerpt": document.excerpt,
+                "kind": "document",
                 "deleted_at": document.ancestors_deleted_at.isoformat().replace(
                     "+00:00", "Z"
                 ),

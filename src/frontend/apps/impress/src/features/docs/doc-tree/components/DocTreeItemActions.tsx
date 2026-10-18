@@ -5,8 +5,9 @@ import { css } from 'styled-components';
 
 import AddSVG from '@/assets/icons/ui-kit/add.svg';
 import { Box, Icon } from '@/components';
-import { Doc, useCreateChildDoc, useTrans } from '@/docs/doc-management';
+import { Doc, useTrans } from '@/docs/doc-management';
 import { DocToolBox } from '@/docs/doc-management/components/DocToolBox';
+import { useCreateRoomDialog } from '@/features/rooms/stores/useCreateRoomDialog';
 import MoreIcon from '@/icons/more_horiz.svg';
 
 import { CLASS_TREE_ITEM_ACTIONS } from '../utils';
@@ -22,25 +23,18 @@ const TOOLBOX_BUTTON_PROPS: ButtonProps = {
 
 type DocTreeItemActionsProps = {
   doc: Doc;
-  onCreateSuccess?: (newDoc: Doc) => void;
   onOpenChange?: (isOpen: boolean) => void;
 };
 
 export const DocTreeItemActions = ({
   doc,
-  onCreateSuccess,
   onOpenChange,
 }: DocTreeItemActionsProps) => {
   const router = useRouter();
   const { t } = useTranslation();
   const { untitledDocument } = useTrans();
 
-  const { mutate: createChildDoc } = useCreateChildDoc({
-    onSuccess: (newDoc) => {
-      onCreateSuccess?.(newDoc);
-      void router.push(`/docs/${newDoc.id}`);
-    },
-  });
+  const openCreateDialog = useCreateRoomDialog((state) => state.open);
 
   return (
     <Box
@@ -74,16 +68,16 @@ export const DocTreeItemActions = ({
         onOpenChange={onOpenChange}
         buttonProps={TOOLBOX_BUTTON_PROPS}
       />
-      {doc.abilities.children_create && (
+      {doc.abilities.children_create && doc.kind !== 'room' && (
         <Button
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();
 
-            createChildDoc({ parentId: doc.id });
+            openCreateDialog(doc.id);
           }}
-          aria-label={t('Add a sub page', {
-            description: 'Accessible name of the button creating a sub-doc',
+          aria-label={t('Add a sub-space', {
+            description: 'Accessible name of the button creating a sub-space',
           })}
           data-testid="doc-tree-item-actions-add-child"
           tabIndex={-1}

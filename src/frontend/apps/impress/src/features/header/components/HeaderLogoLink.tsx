@@ -1,10 +1,10 @@
-import Image from 'next/image';
 import { css } from 'styled-components';
 
 import { Box, StyledLink } from '@/components';
 import { Title } from '@/components/Title';
-import { useConfig } from '@/core';
 import { useCunninghamTheme } from '@/cunningham';
+
+import { EspacesLogo } from './EspacesLogo';
 
 type HeaderLogoLinkProps = {
   /**
@@ -15,9 +15,7 @@ type HeaderLogoLinkProps = {
 };
 
 export const HeaderLogoLink = ({ headingLevel }: HeaderLogoLinkProps) => {
-  const { data: config } = useConfig();
   const { colorsTokens, spacingsTokens } = useCunninghamTheme();
-  const icon = config?.theme_customization?.header?.icon;
 
   return (
     <StyledLink
@@ -40,18 +38,10 @@ export const HeaderLogoLink = ({ headingLevel }: HeaderLogoLinkProps) => {
         $height="fit-content"
         $margin={{ top: 'auto' }}
       >
-        {icon && (
-          <Image
-            data-testid="header-icon-docs"
-            width={0}
-            height={0}
-            priority
-            {...(({ withTitle: _, ...rest }) => rest)(icon)}
-          />
-        )}
+        <EspacesLogo size={32} />
         <Title
           as={headingLevel ?? 'span'}
-          className={icon?.withTitle ? undefined : 'sr-only'}
+
           $size="1.7rem"
           $weight="bold"
         />

@@ -11,6 +11,8 @@ import { useResponsiveStore } from '@/stores';
 
 import banner from '../assets/banner.jpg';
 
+import { EspacesLogo } from '@/features/header/components/EspacesLogo';
+
 import { getHeaderHeight } from './HomeHeader';
 
 export default function HomeBanner() {
@@ -19,7 +21,6 @@ export default function HomeBanner() {
   const { isMobile, isSmallMobile } = useResponsiveStore();
   const { data: config } = useConfig();
   const withProConnect = config?.theme_customization?.home?.['with-proconnect'];
-  const icon = config?.theme_customization?.home?.['icon-banner'];
 
   return (
     <Box
@@ -48,19 +49,7 @@ export default function HomeBanner() {
           $align="center"
           $gap={spacingsTokens['sm']}
         >
-          {icon?.src && (
-            <Image
-              data-testid="header-icon-docs"
-              width={0}
-              height={0}
-              style={{
-                width: '64px',
-                height: 'auto',
-              }}
-              priority
-              {...icon}
-            />
-          )}
+          <EspacesLogo size={72} />
           <Text
             as="h2"
             $size={!isMobile ? 'xs-alt' : '2.3rem'}
@@ -71,7 +60,7 @@ export default function HomeBanner() {
               line-height: ${!isMobile ? '56px' : '45px'};
             `}
           >
-            {t('Collaborative writing, Simplified.', {
+            {t('Remote office life.', {
               description: 'Main headline of the home page',
             })}
           </Text>
@@ -82,7 +71,7 @@ export default function HomeBanner() {
             $variation="secondary"
           >
             {t(
-              'Collaborate and write in real time, without layout constraints.',
+              'Spend your day with your colleagues, online, and talk whenever you need to.',
               { description: 'Subtitle of the home page headline' },
             )}
           </Text>
@@ -93,7 +82,7 @@ export default function HomeBanner() {
               onClick={() => gotoLogin()}
               icon={<Icon iconName="bolt" $color="white" />}
             >
-              {t('Start Writing', {
+              {t('Join', {
                 description: 'Call-to-action button of the home page',
               })}
             </Button>
@@ -115,23 +104,6 @@ export default function HomeBanner() {
             }}
           />
         )}
-      </Box>
-      <Box $css="bottom: 3rem" $position="absolute">
-        <Button
-          color="brand"
-          variant="secondary"
-          icon={<Icon $color="inherit" iconName="expand_more" />}
-          onClick={(e) => {
-            e.preventDefault();
-            document
-              .querySelector('#docs-app-info')
-              ?.scrollIntoView({ behavior: 'smooth' });
-          }}
-        >
-          {t('Show more', {
-            description: 'Button revealing more of the home page',
-          })}
-        </Button>
       </Box>
     </Box>
   );

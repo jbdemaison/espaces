@@ -34,6 +34,8 @@ export const useDocsGridQuery = (
     {
       page: 1,
       ordering,
+      // the list shows the spaces: their rooms are inside
+      kind: ['folder'],
       ...(target &&
         target !== DocDefaultFilter.ALL_DOCS && {
           is_creator_me: target === DocDefaultFilter.MY_DOCS,

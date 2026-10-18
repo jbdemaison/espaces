@@ -6,7 +6,6 @@ import { css } from 'styled-components';
 
 import { Box, Card, Loading, Text } from '@/components';
 import { FadeComponent } from '@/components/Effect';
-import { useImport } from '@/docs/doc-management/hooks/useImport';
 import { DocDefaultFilter, DocsOrdering } from '@/docs/doc-management/types';
 import DocsIcon from '@/icons/Docs.svg';
 import BinIcon from '@/icons/bin.svg';
@@ -30,23 +29,6 @@ export const DocsGrid = ({
   target = DocDefaultFilter.ALL_DOCS,
 }: DocsGridProps) => {
   const { t } = useTranslation();
-  const [isDragOver, setIsDragOver] = useState(false);
-  const {
-    getRootProps,
-    isPending: isImportPending,
-    isEnabled: isImportEnabled,
-  } = useImport({
-    onDragOver: (dragOver: boolean) => {
-      setIsDragOver(dragOver);
-    },
-  });
-
-  const withUpload =
-    (!target ||
-      target === DocDefaultFilter.ALL_DOCS ||
-      target === DocDefaultFilter.MY_DOCS) &&
-    isImportEnabled;
-
   const { isDesktop, isSmallMobile } = useResponsiveStore();
 
   const [ordering, setOrdering] = useState<DocsOrdering>('-updated_at');
@@ -96,24 +78,11 @@ export const DocsGrid = ({
         $width="100%"
         $border="none"
         $background="transparent"
-        $css={css`
-          ${
-            isDragOver
-              ? `
-              border: 2px dashed var(--c--contextuals--border--semantic--brand--primary);
-              background-color: var(--c--contextuals--background--semantic--brand--tertiary);
-            `
-              : ''
-          }
-        `}
         $padding={{
           bottom: 'md',
         }}
-        {...(withUpload
-          ? getRootProps({ className: 'dropzone', tabIndex: -1 })
-          : {})}
       >
-        <DocGridTitleBar target={target} isImportPending={isImportPending} />
+        <DocGridTitleBar target={target} />
         {!hasDocs && !loading && <DocGridNoDocs target={target} />}
         <Box
           $gap="6px"
@@ -172,13 +141,7 @@ export const DocsGrid = ({
   );
 };
 
-const DocGridTitleBar = ({
-  target,
-  isImportPending,
-}: {
-  target: DocDefaultFilter;
-  isImportPending: boolean;
-}) => {
+const DocGridTitleBar = ({ target }: { target: DocDefaultFilter }) => {
   const { t } = useTranslation();
   const { isDesktop } = useResponsiveStore();
 
@@ -223,7 +186,6 @@ const DocGridTitleBar = ({
         <Text as="h2" $size="h4" $margin="none" tabIndex={-1}>
           {title}
         </Text>
-        {isImportPending && <Loading loaderProps={{ size: 'small' }} />}
       </Box>
     </Box>
   );

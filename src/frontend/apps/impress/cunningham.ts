@@ -20,8 +20,8 @@ const themeWhiteLabelLight = getUIKitThemesFromGlobals(whiteLabelGlobals, {
       },
       font: {
         families: {
-          base: 'Inter Variable, Roboto Flex Variable, sans-serif',
-          accent: 'Inter Variable, Roboto Flex Variable, sans-serif',
+          base: 'Marianne, Inter Variable, Roboto Flex Variable, sans-serif',
+          accent: 'Marianne, Inter Variable, Roboto Flex Variable, sans-serif',
         },
       },
     },

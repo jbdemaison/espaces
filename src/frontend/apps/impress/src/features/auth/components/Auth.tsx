@@ -14,8 +14,6 @@ import {
   resetSilent,
 } from '../utils';
 
-import { FirstConnection } from './FirstConnection';
-
 export const Auth = ({ children }: PropsWithChildren) => {
   const {
     isAuthLoading,
@@ -111,10 +109,5 @@ export const Auth = ({ children }: PropsWithChildren) => {
     return <Loading $height="100vh" $width="100vw" />;
   }
 
-  return (
-    <>
-      {children}
-      {user && user.is_first_connection && <FirstConnection />}
-    </>
-  );
+  return <>{children}</>;
 };

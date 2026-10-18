@@ -7,6 +7,7 @@ import { css } from 'styled-components';
 import { DocDefaultFilter, useTrans } from '@/docs/doc-management';
 import { DocsGrid } from '@/docs/docs-grid';
 import { HeaderFloatingBar } from '@/features/header/components/HeaderFloatingBar';
+import { CreateRoomDialogHost } from '@/features/rooms/components/CreateRoomDialogHost';
 import { MainLayout } from '@/layouts';
 import { useResponsiveStore } from '@/stores/useResponsiveStore';
 import { NextPageWithLayout } from '@/types/next';
@@ -59,6 +60,7 @@ const DocsPageLayout = ({ children }: PropsWithChildren) => {
       }}
     >
       {children}
+      <CreateRoomDialogHost />
     </MainLayout>
   );
 };

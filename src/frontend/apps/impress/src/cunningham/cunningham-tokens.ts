@@ -375,8 +375,9 @@ export const tokens = {
             black: 800,
           },
           families: {
-            base: 'Inter Variable, Roboto Flex Variable, sans-serif',
-            accent: 'Inter Variable, Roboto Flex Variable, sans-serif',
+            base: 'Marianne, Inter Variable, Roboto Flex Variable, sans-serif',
+            accent:
+              'Marianne, Inter Variable, Roboto Flex Variable, sans-serif',
           },
         },
         spacings: {
@@ -679,7 +680,8 @@ export const tokens = {
           'nano-font-size': '0.75rem',
           'nano-icon-font-size': '1rem',
           'font-weight': 500,
-          'font-family': 'Inter Variable, Roboto Flex Variable, sans-serif',
+          'font-family':
+            'Marianne, Inter Variable, Roboto Flex Variable, sans-serif',
         },
         calendar: {
           'background-color': '#FFFFFF',
@@ -2212,7 +2214,8 @@ export const tokens = {
           'nano-font-size': '0.75rem',
           'nano-icon-font-size': '1rem',
           'font-weight': 500,
-          'font-family': 'Inter Variable, Roboto Flex Variable, sans-serif',
+          'font-family':
+            'Marianne, Inter Variable, Roboto Flex Variable, sans-serif',
         },
         calendar: {
           'background-color': '#FFFFFF',

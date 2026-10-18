@@ -262,6 +262,7 @@ run-backend: ## Start only the backend application and all needed services
 	@$(COMPOSE) up --force-recreate -d celery-dev
 	@$(COMPOSE) up --force-recreate -d y-provider-development-converter
 	@$(COMPOSE) up --force-recreate -d yhub
+	@$(COMPOSE) up --force-recreate -d livekit
 	@$(COMPOSE) up --force-recreate -d nginx
 .PHONY: run-backend
 

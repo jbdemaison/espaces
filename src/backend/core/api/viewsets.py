@@ -47,7 +47,7 @@ from treebeard.exceptions import InvalidMoveToDescendant
 
 from core import authentication, choices, enums, models
 from core.api.filters import remove_accents
-from core.services import mime_types
+from core.services import livekit_rooms, livekit_tokens, mime_types
 from core.services.ai_services.blocknote import AIService
 from core.services.ai_services.legacy import get_legacy_ai_service
 from core.services.converter_services import (
@@ -70,6 +70,7 @@ from core.services.jwt_services import (
     ConfigurationError as JWTConfigurationError,
 )
 from core.services.jwt_services import JWTService
+from core.services.livekit_presence import DEFAULT_STATUS, PresenceStore
 from core.services.search_indexers import (
     get_document_indexer,
     get_visited_document_ids_of,
@@ -670,6 +671,11 @@ class DocumentViewSet(
         )
         queryset = queryset.filter(path__in=root_paths)
 
+        # After keeping the roots: a room in a folder must not become a root of its
+        # own because the folder above it is not asked for
+        if filter_data["kind"]:
+            queryset = queryset.filter(kind__in=filter_data["kind"])
+
         # Annotate favorite status and filter if applicable as late as possible
         queryset = queryset.annotate_is_favorite(user)
         queryset = filterset.filters["is_favorite"].filter(
@@ -819,6 +825,163 @@ class DocumentViewSet(
         posthog_capture(
             PosthogEventName.DOC_DELETED, self.request.user, {}, document=instance
         )
+
+    @drf.decorators.action(
+        detail=True,
+        methods=["post"],
+        permission_classes=[permissions.IsAuthenticated],
+        url_path="room-access",
+    )
+    def room_access(self, request, *args, **kwargs):
+        """
+        Give an authenticated user the details to connect to a video room.
+
+        The rights come from the room's accesses and the ones inherited from its
+        folders. A user who cannot see the room gets the same answer as for a
+        document they cannot see, whether or not it is a room.
+        """
+        document = self.get_object()
+        room_abilities = document.get_room_abilities(request.user)
+
+        if not room_abilities["join"]:
+            raise drf.exceptions.PermissionDenied()
+
+        try:
+            livekit = livekit_tokens.generate_room_token(
+                document, request.user, room_abilities
+            )
+        except livekit_tokens.LiveKitNotConfigured:
+            return drf_response.Response(
+                {"detail": "Video rooms are not available on this instance."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        # A person is in one room at a time: joining this one empties the other.
+        # This bookkeeping must never prevent anybody from joining.
+        try:
+            store = PresenceStore()
+            room_name = livekit_tokens.get_room_name(document)
+            previous = store.set_current_room(request.user.pk, room_name)
+            if previous and previous != room_name:
+                livekit_rooms.remove_from_room(
+                    previous, livekit_tokens.get_participant_identity(request.user)
+                )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.warning("Could not update the current room", exc_info=True)
+
+        return drf_response.Response(
+            {"livekit": livekit, "abilities": room_abilities},
+            status=status.HTTP_200_OK,
+        )
+
+    @staticmethod
+    def _present_people(participants_by_room):
+        """
+        What other users may know about someone in a room: never the identity.
+
+        Takes {room name: participants} and gives {room name: people} with the status
+        each person chose.
+        """
+        store = PresenceStore()
+        user_ids = [
+            person.get("user_id")
+            for participants in participants_by_room.values()
+            for person in participants
+        ]
+        statuses = store.statuses(user_ids)
+        current = store.current_rooms(user_ids)
+        return {
+            room_name: [
+                {
+                    "user_id": person.get("user_id"),
+                    "name": person.get("name"),
+                    "status": statuses.get(str(person.get("user_id")), DEFAULT_STATUS),
+                }
+                for person in participants
+                # still listed in the room they left: only the last one counts
+                if current.get(str(person.get("user_id")), room_name) == room_name
+            ]
+            for room_name, participants in participants_by_room.items()
+        }
+
+    @staticmethod
+    def _participants(room_names):
+        """Who is in the rooms: asked to LiveKit, or else what the webhooks recorded."""
+        room_names = list(room_names)
+        live = livekit_rooms.live_participants(room_names)
+        if live is not None:
+            return {name: live.get(name, []) for name in room_names}
+        return PresenceStore().participants_many(room_names)
+
+    @drf.decorators.action(
+        detail=True,
+        methods=["get"],
+        permission_classes=[permissions.IsAuthenticated],
+        url_path="room-presence",
+    )
+    def room_presence(self, request, *args, **kwargs):
+        """List the people currently in a video room the user is allowed to enter."""
+        document = self.get_object()
+
+        if not document.get_room_abilities(request.user)["join"]:
+            raise drf.exceptions.PermissionDenied()
+
+        room_name = livekit_tokens.get_room_name(document)
+        people = self._present_people(self._participants([room_name]))
+        return drf_response.Response({"participants": people[room_name]})
+
+    @drf.decorators.action(
+        detail=False,
+        methods=["get"],
+        permission_classes=[permissions.IsAuthenticated],
+        url_path="rooms-presence",
+    )
+    def rooms_presence(self, request, *args, **kwargs):
+        """
+        List the people in several video rooms at once, for the left panel.
+
+        The rooms are given as a comma separated list of ids in `ids`. Rooms the user
+        cannot enter, or that do not exist, are left out of the answer instead of
+        being reported: asking for an id never tells whether it is a room.
+        """
+        try:
+            ids = [
+                uuid.UUID(value)
+                for value in request.query_params.get("ids", "").split(",")
+                if value
+            ]
+        except ValueError as error:
+            raise drf.exceptions.ValidationError(
+                {"ids": "Invalid id in the list."}
+            ) from error
+
+        if len(ids) > settings.LIVEKIT_PRESENCE_MAX_ROOMS_PER_REQUEST:
+            raise drf.exceptions.ValidationError(
+                {
+                    "ids": (
+                        "Too many rooms, at most "
+                        f"{settings.LIVEKIT_PRESENCE_MAX_ROOMS_PER_REQUEST:d} at a time."
+                    )
+                }
+            )
+
+        rooms = (
+            models.Document.objects.filter(
+                pk__in=ids,
+                kind=choices.DocumentKindChoices.ROOM,
+                ancestors_deleted_at__isnull=True,
+            )
+            .annotate_user_roles(request.user)
+            .annotate_user_has_link_trace(request.user)
+        )
+        allowed = [
+            room for room in rooms if room.get_room_abilities(request.user)["join"]
+        ]
+
+        presence = self._participants(
+            livekit_tokens.get_room_name(room) for room in allowed
+        )
+        return drf_response.Response({"rooms": self._present_people(presence)})
 
     @drf.decorators.action(
         detail=False,

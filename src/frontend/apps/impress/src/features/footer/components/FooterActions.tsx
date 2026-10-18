@@ -7,6 +7,7 @@ import { Waffle } from '@/components/Waffle';
 import { ButtonLogin, gotoLogout, useAuth } from '@/features/auth';
 import { HelpMenu } from '@/features/help';
 import { LanguagePicker } from '@/features/language/components/LanguagePicker';
+import { UserStatusPicker } from '@/features/rooms/components/UserStatusPicker';
 
 const FooterActionsGlobalStyle = createGlobalStyle`
   .user-menu__actions .c__language-picker{
@@ -47,6 +48,7 @@ export const FooterActions = ({ withLogin }: FooterActionsProps) => {
             actions={<LanguagePicker />}
             withMobileView={false}
           />
+          {user && withLogin && <UserStatusPicker />}
           <Waffle />
           {withLogin && <ButtonLogin />}
         </Box>

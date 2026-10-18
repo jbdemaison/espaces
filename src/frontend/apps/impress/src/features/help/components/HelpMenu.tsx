@@ -36,7 +36,8 @@ export const HelpMenu = ({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const modalOnbording = useModal();
   const { data: config } = useConfig();
-  const onboardingEnabled = config?.theme_customization?.onboarding?.enabled;
+  // The onboarding tour of Docs does not apply to Spaces
+  const onboardingEnabled = false;
   const documentationUrl = config?.theme_customization?.help?.documentation_url;
   const supportMailto = config?.theme_customization?.help?.support_mailto;
   const legalLinks = config?.theme_customization?.help?.legal_links;

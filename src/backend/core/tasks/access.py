@@ -6,6 +6,8 @@ from django.apps import apps
 from django.conf import settings
 from django.db import transaction
 
+from core.choices import DocumentKindChoices
+from core.services import livekit_rooms
 from core.services.yhub_services import YHubError, YHubService
 
 from impress.celery_app import app
@@ -61,6 +63,15 @@ def reset_service_connections_in_cascade(document_id, user_id=None, after_path=N
 
     service = YHubService()
     for doc in documents:
+        if doc.kind == DocumentKindChoices.ROOM:
+            # A room has no collaborative content: what is connected to it is
+            # the video room, checked against the rights as they are now
+            try:
+                livekit_rooms.recheck_room(doc, user_id)
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.exception("impossible to recheck the video room %s", doc.id)
+            continue
+
         try:
             service.reset_connections(doc, user_id)
         except YHubError:

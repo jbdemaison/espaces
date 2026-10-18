@@ -203,6 +203,9 @@ const DocToolBoxComponent = ({
     listInvalidQueries: [KEY_LIST_DOC, KEY_DOC, KEY_LIST_FAVORITE_DOC],
   });
 
+  // Spaces and their rooms have no content to present, export, print or version
+  const isDocument = !doc.kind || doc.kind === 'document';
+
   const options: DropdownMenuItemWithNodeLabel[] = [
     {
       label: t('Copy link', {
@@ -262,7 +265,8 @@ const DocToolBoxComponent = ({
       callback: () => {
         openPresenter(0);
       },
-      isHidden: Boolean(doc.deleted_at) || isMobile || !isCurrentDoc,
+      isHidden:
+        Boolean(doc.deleted_at) || isMobile || !isCurrentDoc || !isDocument,
       testId: `docs-actions-present-${doc.id}`,
     },
     {
@@ -273,7 +277,7 @@ const DocToolBoxComponent = ({
       callback: () => {
         setIsModalExportOpen(true);
       },
-      isHidden: !isCurrentDoc,
+      isHidden: !isCurrentDoc || !isDocument,
     },
     {
       label: t('Print', {
@@ -283,7 +287,7 @@ const DocToolBoxComponent = ({
       callback: () => {
         printDocumentWithStyles();
       },
-      isHidden: !isCurrentDoc,
+      isHidden: !isCurrentDoc || !isDocument,
     },
     { type: 'separator' },
     {
@@ -327,13 +331,13 @@ const DocToolBoxComponent = ({
           });
         }
       },
-      isHidden: !doc.abilities.duplicate,
+      isHidden: !doc.abilities.duplicate || !isDocument,
     },
     {
       label: t('Move to my docs', {
         description: "Menu action to move a document into the user's own docs",
       }),
-      isHidden: isTopParent || doc.user_role !== Role.OWNER,
+      isHidden: true, // moving a space or leaving it is not offered here
       icon: <DocMoveOutIcon width={18} height={18} aria-hidden="true" />,
       callback: () => {
         if (!treeContext?.root) {
@@ -365,7 +369,7 @@ const DocToolBoxComponent = ({
       callback: () => {
         setIsModalMoveOpen(true);
       },
-      isHidden: !doc.abilities.move,
+      isHidden: true,
     },
     { type: 'separator' },
     {
@@ -377,7 +381,11 @@ const DocToolBoxComponent = ({
       callback: () => {
         setIsModalHistoryOpen(true);
       },
-      isHidden: isMobile || !doc.abilities.versions_list || !isCurrentDoc,
+      isHidden:
+        isMobile ||
+        !doc.abilities.versions_list ||
+        !isCurrentDoc ||
+        !isDocument,
       showSeparator: true,
     },
     {
@@ -394,7 +402,7 @@ const DocToolBoxComponent = ({
        * ⚠️ This doc can still be a child for other users.
        * Unauthenticated visitors also cannot leave.
        */
-      isHidden: !isTopParent || !authenticated,
+      isHidden: true,
     },
     {
       label: t('Delete', {

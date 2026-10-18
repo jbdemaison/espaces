@@ -34,6 +34,7 @@ from treebeard.mp_tree import MP_Node, MP_NodeManager, MP_NodeQuerySet
 
 from core.choices import (
     PRIVILEGED_ROLES,
+    DocumentKindChoices,
     LinkReachChoices,
     LinkRoleChoices,
     RoleChoices,
@@ -996,6 +997,13 @@ class Document(MP_Node, BaseModel):
 
     title = models.CharField(_("title"), max_length=255, null=True, blank=True)
     excerpt = models.TextField(_("excerpt"), max_length=300, null=True, blank=True)
+    kind = models.CharField(
+        _("kind"),
+        max_length=20,
+        choices=DocumentKindChoices.choices,
+        default=DocumentKindChoices.DOCUMENT,
+    )
+    emoji = models.CharField(_("emoji"), max_length=32, blank=True, default="")
     link_reach = models.CharField(
         max_length=20,
         choices=LinkReachChoices.choices,
@@ -1374,7 +1382,12 @@ class Document(MP_Node, BaseModel):
             is_owner_or_admin or role == RoleChoices.EDITOR
         ) and not is_deleted
         can_comment = (can_update or role == RoleChoices.COMMENTER) and not is_deleted
-        can_create_children = can_update and user.is_authenticated
+        # A room is a sub-space: it holds nothing, so spaces stay one level deep
+        can_create_children = (
+            can_update
+            and user.is_authenticated
+            and self.kind != DocumentKindChoices.ROOM
+        )
         can_destroy = (
             is_owner
             if self.is_root()
@@ -1425,6 +1438,28 @@ class Document(MP_Node, BaseModel):
             "update": can_update,
             "versions_list": has_access_role,
             "search": can_get,
+        }
+
+    def get_room_abilities(self, user):
+        """
+        Compute what a user can do in a video room, from the abilities they already
+        have on the document: the accesses and the link reach inherited from the
+        folders above apply to a room exactly as they do to a document.
+
+        - join: see the room and enter it
+        - speak: publish audio and video (commenter role and above)
+        - moderate: mute or remove participants (administrator and owner)
+        """
+        abilities = self.get_abilities(user)
+        can_join = (
+            self.kind == DocumentKindChoices.ROOM
+            and abilities["retrieve"]
+            and not self.ancestors_deleted_at
+        )
+        return {
+            "join": can_join,
+            "speak": can_join and abilities["comment"],
+            "moderate": can_join and abilities["accesses_manage"],
         }
 
     def send_email(self, subject, emails, context=None, language=None):

@@ -969,6 +969,46 @@ class Base(Configuration):
         environ_prefix=None,
     )
 
+    # Video rooms (LiveKit)
+    LIVEKIT_CONFIGURATION = {
+        "api_key": SecretFileValue(
+            None, environ_name="LIVEKIT_API_KEY", environ_prefix=None
+        ),
+        "api_secret": SecretFileValue(
+            None, environ_name="LIVEKIT_API_SECRET", environ_prefix=None
+        ),
+        # The address the browsers connect to
+        "url": values.Value(None, environ_name="LIVEKIT_API_URL", environ_prefix=None),
+        # The address the backend uses to talk to LiveKit, when it differs from the
+        # one of the browsers (containers on the same network, for example)
+        "internal_url": values.Value(
+            None, environ_name="LIVEKIT_INTERNAL_URL", environ_prefix=None
+        ),
+    }
+    LIVEKIT_DEFAULT_SOURCES = values.ListValue(
+        ["camera", "microphone", "screen_share", "screen_share_audio"],
+        environ_name="LIVEKIT_DEFAULT_SOURCES",
+        environ_prefix=None,
+    )
+    # A LiveKit token outlives the access that earned it: keep it short so that a
+    # removed access stops working soon, and let the front ask for a fresh one.
+    LIVEKIT_TOKEN_TTL_SECONDS = values.PositiveIntegerValue(
+        3600, environ_name="LIVEKIT_TOKEN_TTL_SECONDS", environ_prefix=None
+    )
+    # How long the list of people in a room is kept when LiveKit stops reporting
+    # on it (a lost webhook): every arrival renews it.
+    # The presence needs a Redis shared by all the processes: the default cache of
+    # some environments is local to each of them, so it is not used for this.
+    LIVEKIT_PRESENCE_REDIS_URL = values.Value(
+        "redis://redis:6379/2", environ_name="REDIS_URL", environ_prefix=None
+    )
+    LIVEKIT_PRESENCE_TTL_SECONDS = values.PositiveIntegerValue(
+        86400, environ_name="LIVEKIT_PRESENCE_TTL_SECONDS", environ_prefix=None
+    )
+    LIVEKIT_PRESENCE_MAX_ROOMS_PER_REQUEST = values.PositiveIntegerValue(
+        100, environ_name="LIVEKIT_PRESENCE_MAX_ROOMS_PER_REQUEST", environ_prefix=None
+    )
+
     MISTRAL_SDK_BASE_URL = values.Value(
         None, environ_name="MISTRAL_SDK_BASE_URL", environ_prefix=None
     )
@@ -1645,6 +1685,12 @@ class Test(Base):
     STATIC_ROOT = None
 
     CELERY_TASK_ALWAYS_EAGER = values.BooleanValue(True)
+
+    LIVEKIT_CONFIGURATION = {
+        "api_key": "devkey-padded-for-minimum-len!-livekit",
+        "api_secret": "secret-key-padded-for-minimum-len!-livekit",
+        "url": "http://127.0.0.1.nip.io:7880",
+    }
 
     STORAGES = {
         "default": {

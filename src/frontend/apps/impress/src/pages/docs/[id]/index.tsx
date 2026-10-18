@@ -21,9 +21,21 @@ import { KEY_AUTH, setAuthUrl, useAuth } from '@/features/auth';
 import { PresenterRoot } from '@/features/docs/doc-presenter';
 import { getDocChildren, subPageToTree } from '@/features/docs/doc-tree/';
 import { DocEditorSkeleton, useSkeletonStore } from '@/features/skeletons';
+import { CreateRoomDialogHost } from '@/features/rooms/components/CreateRoomDialogHost';
 import { MainLayout } from '@/layouts';
 import { MAIN_LAYOUT_ID } from '@/layouts/conf';
 import { NextPageWithLayout } from '@/types/next';
+
+const SpaceContent = dynamic(
+  () =>
+    import('@/features/rooms/components/SpaceContent').then((mod) => ({
+      default: mod.SpaceContent,
+    })),
+  {
+    ssr: false,
+    loading: () => <DocEditorSkeleton />,
+  },
+);
 
 const DocEditor = dynamic(
   () =>
@@ -70,6 +82,7 @@ export function DocLayout() {
           <DocPage id={id} />
         </MainLayout>
         <PresenterRoot />
+        <CreateRoomDialogHost />
       </TreeProvider>
     </>
   );
@@ -218,7 +231,11 @@ const DocPage = ({ id }: DocProps) => {
           key="title"
         />
       </Head>
-      <DocEditor doc={doc} />
+      {doc.kind && doc.kind !== 'document' ? (
+        <SpaceContent doc={doc} />
+      ) : (
+        <DocEditor doc={doc} />
+      )}
     </>
   );
 };

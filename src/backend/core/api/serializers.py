@@ -100,8 +100,10 @@ class ListDocumentSerializer(serializers.ModelSerializer):
             "creator",
             "deleted_at",
             "depth",
+            "emoji",
             "excerpt",
             "is_favorite",
+            "kind",
             "link_role",
             "link_reach",
             "nb_accesses_ancestors",
@@ -123,8 +125,10 @@ class ListDocumentSerializer(serializers.ModelSerializer):
             "creator",
             "deleted_at",
             "depth",
+            "emoji",
             "excerpt",
             "is_favorite",
+            "kind",
             "link_role",
             "link_reach",
             "nb_accesses_ancestors",
@@ -197,9 +201,11 @@ class DocumentSerializer(ListDocumentSerializer):
             "creator",
             "deleted_at",
             "depth",
+            "emoji",
             "excerpt",
             "file",
             "is_favorite",
+            "kind",
             "link_role",
             "link_reach",
             "nb_accesses_ancestors",
@@ -259,6 +265,14 @@ class DocumentSerializer(ListDocumentSerializer):
                     "A document with this ID already exists. You cannot override it."
                 )
 
+        return value
+
+    def validate_kind(self, value):
+        """The kind of a node is chosen at creation and cannot change afterwards."""
+        if self.instance is not None and value != self.instance.kind:
+            raise serializers.ValidationError(
+                "The kind of a document cannot be changed."
+            )
         return value
 
     def validate_file(self, file):

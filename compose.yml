@@ -128,6 +128,21 @@ services:
     depends_on:
       - app-dev
 
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --config /etc/livekit.yaml --node-ip ${LIVEKIT_NODE_IP:-127.0.0.1}
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    volumes:
+      - ./docker/files/livekit/livekit.yaml:/etc/livekit.yaml:ro
+    networks:
+      default: {}
+      lasuite:
+        aliases:
+          - livekit
+
   nginx:
     image: nginx:1.25
     ports:
@@ -169,6 +184,8 @@ services:
         PUBLISH_AS_MIT: "false"
         SW_DEACTIVATED: "true"
     image: impress:frontend-development
+    stdin_open: true
+    tty: true
     volumes:
       - ./src/frontend:/home/frontend
       - /home/frontend/node_modules
@@ -332,6 +349,7 @@ services:
 
   docspec:
     image: ghcr.io/docspec/api:1.21.4
+    platform: linux/amd64
     ports:
       - "4000:3000"
 

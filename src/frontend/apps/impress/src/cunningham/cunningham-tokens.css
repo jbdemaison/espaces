@@ -363,9 +363,9 @@
   --c--globals--font--weights--extrabold: 800;
   --c--globals--font--weights--black: 800;
   --c--globals--font--families--base:
-    inter variable, roboto flex variable, sans-serif;
+    marianne, inter variable, roboto flex variable, sans-serif;
   --c--globals--font--families--accent:
-    inter variable, roboto flex variable, sans-serif;
+    marianne, inter variable, roboto flex variable, sans-serif;
   --c--globals--spacings--0: 0;
   --c--globals--spacings--l: 3rem;
   --c--globals--spacings--b: 1.625rem;

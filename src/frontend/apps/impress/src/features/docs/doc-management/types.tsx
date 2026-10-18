@@ -48,8 +48,11 @@ export enum LinkRole {
 
 export type Base64 = string;
 
+export type DocKind = 'document' | 'folder' | 'room';
+
 export interface Doc {
   id: string;
+  kind?: DocKind;
   title?: string;
   children?: Doc[];
   childrenCount?: number;

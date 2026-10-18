@@ -27,7 +27,6 @@ export const ConfigProvider = ({ children }: PropsWithChildren) => {
   const { AnalyticsProvider } = useAnalytics();
   const { i18n } = useTranslation();
   const languageSynchronized = useRef(false);
-  const favicon = conf?.theme_customization?.favicon;
 
   useEffect(() => {
     if (!user || languageSynchronized.current) {
@@ -132,24 +131,10 @@ export const ConfigProvider = ({ children }: PropsWithChildren) => {
       {conf?.FRONTEND_JS_URL && (
         <Script src={conf?.FRONTEND_JS_URL} strategy="afterInteractive" />
       )}
-      {favicon?.light.href && (
-        <Head>
-          <link
-            rel="icon"
-            media="(prefers-color-scheme: light)"
-            {...favicon.light}
-          />
-        </Head>
-      )}
-      {favicon?.dark.href && (
-        <Head>
-          <link
-            rel="icon"
-            media="(prefers-color-scheme: dark)"
-            {...favicon.dark}
-          />
-        </Head>
-      )}
+      <Head>
+        <link rel="icon" type="image/svg+xml" href="/assets/icon-espaces.svg" />
+        <link rel="icon" type="image/png" href="/assets/icon-espaces.png" />
+      </Head>
       <meta name="viewport" content="width=device-width, initial-scale=1" />
       <AnalyticsProvider>{children}</AnalyticsProvider>
     </>

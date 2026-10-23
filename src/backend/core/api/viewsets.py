@@ -22,7 +22,7 @@ from django.db import DatabaseError, transaction
 from django.db import models as db
 from django.db.models.expressions import RawSQL
 from django.db.models.functions import Greatest, Left, Length
-from django.http import Http404, StreamingHttpResponse
+from django.http import Http404, HttpResponse, StreamingHttpResponse
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.functional import cached_property
@@ -30,24 +30,32 @@ from django.utils.http import content_disposition_header
 from django.utils.text import capfirst, slugify
 from django.utils.translation import gettext_lazy as _
 
+import magic
 import requests
 import rest_framework as drf
 import waffle
 from botocore.exceptions import ClientError
 from csp.constants import NONE
 from csp.decorators import csp_update
+from lasuite.drf.throttling import MonitoredScopedRateThrottle
 from lasuite.malware_detection import malware_detection
 from lasuite.tools.email import get_domain_from_email
 from pydantic import ValidationError as PydanticValidationError
 from rest_framework import filters, status, viewsets
 from rest_framework import response as drf_response
+from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 from treebeard.exceptions import InvalidMoveToDescendant
 
 from core import authentication, choices, enums, models
 from core.api.filters import remove_accents
-from core.services import livekit_rooms, livekit_tokens, mime_types
+from core.services import (
+    livekit_invitations,
+    livekit_rooms,
+    livekit_tokens,
+    mime_types,
+)
 from core.services.ai_services.blocknote import AIService
 from core.services.ai_services.legacy import get_legacy_ai_service
 from core.services.converter_services import (
@@ -70,7 +78,7 @@ from core.services.jwt_services import (
     ConfigurationError as JWTConfigurationError,
 )
 from core.services.jwt_services import JWTService
-from core.services.livekit_presence import DEFAULT_STATUS, PresenceStore
+from core.services.livekit_presence import PresenceStore
 from core.services.search_indexers import (
     get_document_indexer,
     get_visited_document_ids_of,
@@ -192,12 +200,49 @@ class Pagination(drf.pagination.PageNumberPagination):
     page_size_query_param = "page_size"
 
 
+def users_share_a_document(user, other_id):
+    """
+    Whether two users both have access to the same document, or to a document and
+    to one of its descendants (a space and its sub-spaces).
+    """
+    mine = list(
+        models.DocumentAccess.objects.filter(user=user).values_list(
+            "document__path", flat=True
+        )
+    )
+    theirs = list(
+        models.DocumentAccess.objects.filter(user_id=other_id).values_list(
+            "document__path", flat=True
+        )
+    )
+    return any(a.startswith(b) or b.startswith(a) for a in mine for b in theirs)
+
+
+def avatar_versions(user_ids):
+    """{user id: version of the profile picture} for those who have one, in one query."""
+    ids = []
+    for user_id in user_ids:
+        try:
+            ids.append(str(uuid.UUID(str(user_id))))
+        except ValueError:
+            continue
+    if not ids:
+        return {}
+    return {
+        str(user_id): int(updated_at.timestamp())
+        for user_id, updated_at in models.User.objects.filter(
+            pk__in=ids, avatar_updated_at__isnull=False
+        ).values_list("pk", "avatar_updated_at")
+    }
+
+
 class UserViewSet(
     drf.mixins.UpdateModelMixin, viewsets.GenericViewSet, drf.mixins.ListModelMixin
 ):
     """User ViewSet"""
 
     permission_classes = [permissions.IsSelf]
+    throttle_scope = None
     queryset = models.User.objects.filter(is_active=True)
     serializer_class = serializers.UserSerializer
     pagination_class = None
@@ -339,6 +384,82 @@ class UserViewSet(
             self.serializer_class(request.user, context=context).data
         )
 
+    AVATAR_MAX_BYTES = 300 * 1024
+    AVATAR_TYPES = ("image/jpeg", "image/png", "image/webp")
+
+    @drf.decorators.action(
+        detail=False,
+        methods=["put", "delete"],
+        url_name="my-avatar",
+        url_path="me/avatar",
+        permission_classes=[permissions.IsAuthenticated],
+        parser_classes=[MultiPartParser],
+        throttle_scope="avatar_write",
+        throttle_classes=[MonitoredScopedRateThrottle],
+    )
+    def my_avatar(self, request):
+        """
+        Set (PUT, file in `image`) or remove (DELETE) the profile picture of the user.
+
+        The browser crops and shrinks the picture; what is received is checked
+        against its real content, not the name or type it claims.
+        """
+        user = request.user
+        if request.method == "DELETE":
+            models.UserAvatar.objects.filter(user=user).delete()
+            models.User.objects.filter(pk=user.pk).update(avatar_updated_at=None)
+            return drf.response.Response(status=status.HTTP_204_NO_CONTENT)
+
+        upload = request.FILES.get("image")
+        if upload is None:
+            raise drf.exceptions.ValidationError({"image": "No picture was sent."})
+        if upload.size > self.AVATAR_MAX_BYTES:
+            raise drf.exceptions.ValidationError({"image": "The picture is too big."})
+        data = upload.read()
+        content_type = magic.from_buffer(data[:4096], mime=True)
+        if content_type not in self.AVATAR_TYPES:
+            raise drf.exceptions.ValidationError(
+                {"image": "The picture must be a JPEG, PNG or WebP image."}
+            )
+
+        models.UserAvatar.objects.update_or_create(
+            user=user, defaults={"content_type": content_type, "data": data}
+        )
+        models.User.objects.filter(pk=user.pk).update(avatar_updated_at=timezone.now())
+        user.refresh_from_db()
+        return drf.response.Response(self.serializer_class(user).data)
+
+    @drf.decorators.action(
+        detail=True,
+        methods=["get"],
+        url_name="avatar",
+        url_path="avatar",
+        permission_classes=[permissions.IsAuthenticated],
+        throttle_scope="avatar_read",
+        throttle_classes=[MonitoredScopedRateThrottle],
+    )
+    def avatar(self, request, pk=None):
+        """The profile picture of a user, shown to the other people who meet them."""
+        try:
+            avatar = models.UserAvatar.objects.get(user_id=pk, user__is_active=True)
+        except (models.UserAvatar.DoesNotExist, ValidationError) as error:
+            raise Http404 from error
+
+        # A picture is only shown to people who work with its owner: the same
+        # answer as for an unknown picture is given to everybody else.
+        if avatar.user_id != request.user.pk and not users_share_a_document(
+            request.user, avatar.user_id
+        ):
+            raise Http404
+
+        response = HttpResponse(bytes(avatar.data), content_type=avatar.content_type)
+        # the address changes with the picture (`?v=`): it can be kept for a long time
+        response["Cache-Control"] = "private, max-age=86400"
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Content-Security-Policy"] = "default-src 'none'; sandbox"
+        response["Content-Disposition"] = "inline"
+        return response
+
     @drf.decorators.action(
         detail=False,
         methods=["post"],
@@ -445,6 +566,17 @@ class DocumentMetadata(drf.metadata.SimpleMetadata):
 
 
 # pylint: disable=too-many-public-methods
+def valid_uuids(values):
+    """The values that are ids: LiveKit identities are ours, but nothing proves it."""
+    result = []
+    for value in values:
+        try:
+            result.append(uuid.UUID(str(value)))
+        except ValueError:
+            continue
+    return result
+
+
 class DocumentViewSet(
     SerializerPerActionMixin,
     drf.mixins.CreateModelMixin,
@@ -875,12 +1007,15 @@ class DocumentViewSet(
         )
 
     @staticmethod
-    def _present_people(participants_by_room):
+    def _present_people(participants_by_room, space_by_room=None):
         """
         What other users may know about someone in a room: never the identity.
 
-        Takes {room name: participants} and gives {room name: people} with the status
-        each person chose.
+        Takes {room name: participants} and gives {room name: people} with the
+        situation (emoji and text) each person chose, and whether they can be
+        invited from the space of the room (`space_by_room` is {room name: space}).
+        Only the people who can enter the room are shown this, so none of it goes
+        beyond the space.
         """
         store = PresenceStore()
         user_ids = [
@@ -888,14 +1023,32 @@ class DocumentViewSet(
             for participants in participants_by_room.values()
             for person in participants
         ]
-        statuses = store.statuses(user_ids)
+        situations = store.situations(user_ids)
+        space_by_room = space_by_room or {}
+        spaces = list(
+            {space.pk: space for space in space_by_room.values() if space}.values()
+        )
+        reachable_in = {
+            space_id: {item["user_id"] for item in items}
+            for space_id, items in DocumentViewSet.reachable_people(
+                spaces, user_ids=user_ids
+            ).items()
+        }
         current = store.current_rooms(user_ids)
+        versions = avatar_versions(user_ids)
         return {
             room_name: [
                 {
                     "user_id": person.get("user_id"),
                     "name": person.get("name"),
-                    "status": statuses.get(str(person.get("user_id")), DEFAULT_STATUS),
+                    "situation": situations.get(str(person.get("user_id"))),
+                    # shown to the others in the other rooms of the space: they can
+                    # invite this person to join them
+                    "reachable": str(person.get("user_id"))
+                    in reachable_in.get(
+                        str(getattr(space_by_room.get(room_name), "pk", "")), set()
+                    ),
+                    "avatar_version": versions.get(str(person.get("user_id"))),
                 }
                 for person in participants
                 # still listed in the room they left: only the last one counts
@@ -905,7 +1058,25 @@ class DocumentViewSet(
         }
 
     @staticmethod
-    def _participants(room_names):
+    def _spaces_of_rooms(rooms):
+        """The space (folder) holding each room: {room name: space, or None}."""
+        step = models.Document.steplen
+        rooms = list(rooms)
+        spaces = {
+            space.path: space
+            for space in models.Document.objects.filter(
+                path__in={room.path[:-step] for room in rooms if room.depth > 1},
+                kind=choices.DocumentKindChoices.FOLDER,
+                ancestors_deleted_at__isnull=True,
+            )
+        }
+        return {
+            livekit_tokens.get_room_name(room): spaces.get(room.path[:-step])
+            for room in rooms
+        }
+
+    @staticmethod
+    def participants_in(room_names):
         """Who is in the rooms: asked to LiveKit, or else what the webhooks recorded."""
         room_names = list(room_names)
         live = livekit_rooms.live_participants(room_names)
@@ -927,7 +1098,9 @@ class DocumentViewSet(
             raise drf.exceptions.PermissionDenied()
 
         room_name = livekit_tokens.get_room_name(document)
-        people = self._present_people(self._participants([room_name]))
+        people = self._present_people(
+            self.participants_in([room_name]), self._spaces_of_rooms([document])
+        )
         return drf_response.Response({"participants": people[room_name]})
 
     @drf.decorators.action(
@@ -935,6 +1108,7 @@ class DocumentViewSet(
         methods=["get"],
         permission_classes=[permissions.IsAuthenticated],
         url_path="rooms-presence",
+        throttle_scope="presence",
     )
     def rooms_presence(self, request, *args, **kwargs):
         """
@@ -978,10 +1152,265 @@ class DocumentViewSet(
             room for room in rooms if room.get_room_abilities(request.user)["join"]
         ]
 
-        presence = self._participants(
+        presence = self.participants_in(
             livekit_tokens.get_room_name(room) for room in allowed
         )
-        return drf_response.Response({"rooms": self._present_people(presence)})
+        people = self._present_people(presence, self._spaces_of_rooms(allowed))
+        return drf_response.Response({"rooms": people})
+
+    @staticmethod
+    def space_rooms(space):
+        """The sub-spaces (video rooms) directly inside a space, in their order."""
+        return models.Document.objects.filter(
+            path__startswith=space.path,
+            depth=space.depth + 1,
+            kind=choices.DocumentKindChoices.ROOM,
+            ancestors_deleted_at__isnull=True,
+            deleted_at__isnull=True,
+        ).order_by("path")
+
+    @staticmethod
+    def reachable_people(spaces, present_user_ids=None, user_ids=None):
+        """
+        Who can be invited from each space: {space id: people}.
+
+        Someone is shown if the space is one of their favorites marked as reachable,
+        they said they are reachable, are connected to their inbox right now, and
+        still have the right to see the space.
+
+        `present_user_ids`, {space id: ids of the users in one of its sub-spaces},
+        leaves out those who are in a sub-space: they are shown there. `user_ids`
+        limits the answer to these users.
+        """
+        present_user_ids = present_user_ids or {}
+        favorites = models.DocumentFavorite.objects.filter(
+            document__in=spaces, reachable=True
+        )
+        if user_ids is not None:
+            favorites = favorites.filter(user_id__in=valid_uuids(user_ids))
+        favorites = list(favorites.select_related("user", "document"))
+        if not favorites:
+            return {}
+
+        users = {favorite.user_id: favorite.user for favorite in favorites}
+        accepting = PresenceStore().reachable(users)
+        users = {
+            user_id: user
+            for user_id, user in users.items()
+            if str(user_id) in accepting
+        }
+        online = livekit_rooms.online_inboxes(users.values()) or set()
+        waiting = livekit_invitations.pending_counts(users)
+        versions = avatar_versions(users)
+        situations = PresenceStore().situations(users)
+
+        result = {}
+        for favorite in favorites:
+            user = users.get(favorite.user_id)
+            space_id = str(favorite.document_id)
+            if (
+                user is None
+                or str(user.pk) not in online
+                or str(user.pk) in present_user_ids.get(space_id, set())
+                or favorite.document.ancestors_deleted_at
+                or not favorite.document.get_abilities(user)["retrieve"]
+            ):
+                continue
+            result.setdefault(space_id, []).append(
+                {
+                    "user_id": str(user.pk),
+                    "name": livekit_tokens.get_participant_name(user),
+                    "avatar_version": versions.get(str(user.pk)),
+                    "situation": situations.get(str(user.pk)),
+                    # too many invitations are waiting for them: no more for now
+                    "busy": waiting.get(str(user.pk), 0)
+                    >= livekit_invitations.MAX_PENDING,
+                }
+            )
+        return result
+
+    @classmethod
+    def users_in_spaces(cls, spaces):
+        """The ids of the users present in a sub-space of each space: {space id: ids}."""
+        rooms_of = {space.pk: list(cls.space_rooms(space)) for space in spaces}
+        presence = cls.participants_in(
+            livekit_tokens.get_room_name(room)
+            for rooms in rooms_of.values()
+            for room in rooms
+        )
+        return {
+            str(space_id): {
+                str(person.get("user_id"))
+                for room in rooms
+                for person in presence.get(livekit_tokens.get_room_name(room), [])
+                if person.get("user_id")
+            }
+            for space_id, rooms in rooms_of.items()
+        }
+
+    @drf.decorators.action(
+        detail=False,
+        methods=["get"],
+        permission_classes=[permissions.IsAuthenticated],
+        url_path="spaces-reachable",
+        throttle_scope="presence",
+    )
+    def spaces_reachable(self, request, *args, **kwargs):
+        """
+        The people who can be invited from several spaces at once, for the left panel.
+
+        The spaces are given as a comma separated list of ids in `ids`. Spaces the user
+        cannot see are left out, as asking for an id never tells whether it exists.
+        """
+        try:
+            ids = [
+                uuid.UUID(value)
+                for value in request.query_params.get("ids", "").split(",")
+                if value
+            ]
+        except ValueError as error:
+            raise drf.exceptions.ValidationError(
+                {"ids": "Invalid id in the list."}
+            ) from error
+        if len(ids) > settings.LIVEKIT_PRESENCE_MAX_ROOMS_PER_REQUEST:
+            raise drf.exceptions.ValidationError(
+                {
+                    "ids": (
+                        "Too many spaces, at most "
+                        f"{settings.LIVEKIT_PRESENCE_MAX_ROOMS_PER_REQUEST:d} at a time."
+                    )
+                }
+            )
+
+        spaces = [
+            space
+            for space in models.Document.objects.filter(
+                pk__in=ids,
+                kind=choices.DocumentKindChoices.FOLDER,
+                ancestors_deleted_at__isnull=True,
+            )
+            .annotate_user_roles(request.user)
+            .annotate_user_has_link_trace(request.user)
+            if space.get_abilities(request.user)["retrieve"]
+        ]
+        people = self.reachable_people(spaces, self.users_in_spaces(spaces))
+        return drf_response.Response(
+            {
+                "spaces": {
+                    space_id: [
+                        person
+                        for person in persons
+                        if person["user_id"] != str(request.user.pk)
+                    ]
+                    for space_id, persons in people.items()
+                }
+            }
+        )
+
+    @drf.decorators.action(
+        detail=False,
+        methods=["get"],
+        permission_classes=[permissions.IsAuthenticated],
+        url_path="favorite-spaces",
+        throttle_scope="presence",
+    )
+    def favorite_spaces(self, request, *args, **kwargs):
+        """
+        The favorite spaces of the user, each with its favorite sub-spaces, and whether
+        the user can be invited from the space while "reachable". A space that is not
+        a favorite is not listed, even if it holds a favorite sub-space.
+        """
+        favorites = {
+            favorite.document_id: favorite
+            for favorite in models.DocumentFavorite.objects.filter(
+                user=request.user,
+                document__ancestors_deleted_at__isnull=True,
+                document__deleted_at__isnull=True,
+            ).select_related("document")
+        }
+        space_paths = {
+            favorite.document.path
+            for favorite in favorites.values()
+            if favorite.document.kind == choices.DocumentKindChoices.FOLDER
+        }
+
+        spaces = [
+            space
+            for space in models.Document.objects.filter(
+                path__in=space_paths,
+                kind=choices.DocumentKindChoices.FOLDER,
+            )
+            .annotate_user_roles(request.user)
+            .annotate_user_has_link_trace(request.user)
+            .order_by("path")
+            if space.get_abilities(request.user)["retrieve"]
+        ]
+
+        results = []
+        for space in spaces:
+            rooms = [
+                room
+                for room in self.space_rooms(space)
+                .annotate_user_roles(request.user)
+                .annotate_user_has_link_trace(request.user)
+                if room.pk in favorites
+                and room.get_room_abilities(request.user)["join"]
+            ]
+            space_favorite = favorites.get(space.pk)
+            results.append(
+                {
+                    "id": str(space.pk),
+                    "title": space.title or "",
+                    "emoji": space.emoji,
+                    "favorite": space_favorite is not None,
+                    "reachable": bool(space_favorite and space_favorite.reachable),
+                    "rooms": [
+                        {
+                            "id": str(room.pk),
+                            "title": room.title or "",
+                            "emoji": room.emoji,
+                            "favorite": room.pk in favorites,
+                        }
+                        for room in rooms
+                    ],
+                }
+            )
+        return drf_response.Response({"results": results})
+
+    @drf.decorators.action(
+        detail=True,
+        methods=["put"],
+        permission_classes=[permissions.IsAuthenticated],
+        url_path="reachable",
+        throttle_scope="presence",
+    )
+    def reachable(self, request, *args, **kwargs):
+        """
+        Say whether the user can be invited from this space while they are
+        "reachable". Only a favorite space can be reachable.
+        """
+        document = self.get_object()
+        if not document.get_abilities(request.user)["retrieve"]:
+            raise drf.exceptions.PermissionDenied()
+        if document.kind != choices.DocumentKindChoices.FOLDER:
+            raise drf.exceptions.ValidationError(
+                {"reachable": "Only a space can be reachable."}
+            )
+
+        value = request.data.get("reachable")
+        if not isinstance(value, bool):
+            raise drf.exceptions.ValidationError(
+                {"reachable": "Must be true or false."}
+            )
+
+        updated = models.DocumentFavorite.objects.filter(
+            document=document, user=request.user
+        ).update(reachable=value)
+        if not updated:
+            raise drf.exceptions.ValidationError(
+                {"reachable": "Only a favorite can be reachable."}
+            )
+        return drf_response.Response({"reachable": value})
 
     @drf.decorators.action(
         detail=False,
@@ -2838,6 +3267,7 @@ class DocumentAccessViewSet(
         "user__id",
         "user__short_name",
         "user__full_name",
+        "user__avatar_updated_at",
         "user__email",
         "user__language",
         "user__is_first_connection",
@@ -2979,14 +3409,22 @@ class DocumentAccessViewSet(
         )
 
         if access.user:
-            access.document.send_invitation_email(
-                access.user.email,
-                access.role,
-                self.request.user,
-                access.user.language
-                or self.request.user.language
-                or settings.LANGUAGE_CODE,
-            )
+            # the access exists: a mail that cannot be sent must not make the
+            # person think nothing was added
+            try:
+                access.document.send_invitation_email(
+                    access.user.email,
+                    access.role,
+                    self.request.user,
+                    access.user.language
+                    or self.request.user.language
+                    or settings.LANGUAGE_CODE,
+                )
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.exception(
+                    "The invitation email for access %s could not be sent",
+                    access.id,
+                )
 
     def perform_destroy(self, instance):
         """
@@ -3129,12 +3567,19 @@ class InvitationViewset(
         """Save invitation to a document then send an email to the invited user."""
         invitation = serializer.save()
 
-        invitation.document.send_invitation_email(
-            invitation.email,
-            invitation.role,
-            self.request.user,
-            self.request.user.language or settings.LANGUAGE_CODE,
-        )
+        # the invitation exists: a mail that cannot be sent must not hide that
+        try:
+            invitation.document.send_invitation_email(
+                invitation.email,
+                invitation.role,
+                self.request.user,
+                self.request.user.language or settings.LANGUAGE_CODE,
+            )
+        except Exception:  # pylint: disable=broad-exception-caught
+            logger.exception(
+                "The invitation email for invitation %s could not be sent",
+                invitation.id,
+            )
 
 
 class DocumentAskForAccessViewSet(

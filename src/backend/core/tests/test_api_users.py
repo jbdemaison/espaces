@@ -461,6 +461,7 @@ def test_api_users_retrieve_me_authenticated():
         "language": user.language,
         "short_name": user.short_name,
         "is_first_connection": True,
+        "avatar_version": None,
     }
 
 
@@ -491,6 +492,7 @@ def test_api_users_retrieve_me_authenticated_empty_name():
         "language": user.language,
         "short_name": "test_foo",
         "is_first_connection": True,
+        "avatar_version": None,
     }
 
 

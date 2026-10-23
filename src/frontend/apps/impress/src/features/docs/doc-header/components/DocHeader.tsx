@@ -32,7 +32,9 @@ export const DocHeader = ({ doc }: DocHeaderProps) => {
   const { updateDocEmoji } = useDocTitleUpdate();
 
   const { isTopRoot } = useDocUtils(doc);
-  const displayEmojiButton = doc.abilities.partial_update && !isTopRoot;
+  // A space handles its emoji like a sub-document does: above its title
+  const emojiInTitle = isTopRoot && doc.kind !== 'folder';
+  const displayEmojiButton = doc.abilities.partial_update && !emojiInTitle;
   const latestTitleRef = useRef(doc.title ?? '');
 
   useEffect(() => {
@@ -71,7 +73,8 @@ export const DocHeader = ({ doc }: DocHeaderProps) => {
           }}
         >
           {isDeletedDoc && <AlertRestore doc={doc} />}
-          {isOffline && <AlertOffline />}
+          {/* a video room shows it above its header, away from the Chat button */}
+          {isOffline && doc.kind !== 'room' && <AlertOffline />}
         </Box>
         <Box $gap="sm">
           <Box>
@@ -88,7 +91,11 @@ export const DocHeader = ({ doc }: DocHeaderProps) => {
                     : updateDocEmoji(
                         doc.id,
                         latestTitleRef.current,
-                        isAprilFools ? '🐟' : '📄',
+                        isAprilFools
+                          ? '🐟'
+                          : doc.kind === 'folder'
+                            ? '🏢'
+                            : '📄',
                       );
                 }}
                 aria-label={

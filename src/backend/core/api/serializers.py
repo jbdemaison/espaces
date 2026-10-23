@@ -27,11 +27,17 @@ from core.utils.analytics import PosthogEventName, posthog_capture
 from core.utils.treebeard import create_tree_node_with_retry
 
 
+def avatar_version(updated_at):
+    """The version of a profile picture, used to refresh it when it changes."""
+    return int(updated_at.timestamp()) if updated_at else None
+
+
 class UserSerializer(serializers.ModelSerializer):
     """Serialize users."""
 
     full_name = serializers.SerializerMethodField(read_only=True)
     short_name = serializers.SerializerMethodField(read_only=True)
+    avatar_version = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = models.User
@@ -42,6 +48,7 @@ class UserSerializer(serializers.ModelSerializer):
             "short_name",
             "language",
             "is_first_connection",
+            "avatar_version",
         ]
         read_only_fields = [
             "id",
@@ -49,7 +56,12 @@ class UserSerializer(serializers.ModelSerializer):
             "full_name",
             "short_name",
             "is_first_connection",
+            "avatar_version",
         ]
+
+    def get_avatar_version(self, instance):
+        """Changes whenever the profile picture does; null without a picture."""
+        return avatar_version(instance.avatar_updated_at)
 
     def get_full_name(self, instance):
         """Return the full name of the user."""

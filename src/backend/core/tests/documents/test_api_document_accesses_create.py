@@ -622,3 +622,24 @@ def test_api_document_accesses_create_resets_connections(
     mock_reset_service_connections.assert_called_once_with(
         str(document.id), expected_user_id
     )
+
+
+def test_api_document_accesses_create_succeeds_when_the_email_cannot_be_sent():
+    """The access is created and reported as such even if the invitation mail fails."""
+    owner = factories.UserFactory()
+    other = factories.UserFactory()
+    document = factories.DocumentFactory(users=[(owner, "owner")])
+    client = APIClient()
+    client.force_login(owner)
+
+    with mock.patch.object(
+        models.Document, "send_invitation_email", side_effect=OSError("no mail server")
+    ):
+        response = client.post(
+            f"/api/v1.0/documents/{document.id!s}/accesses/",
+            {"user_id": str(other.id), "role": "reader"},
+            format="json",
+        )
+
+    assert response.status_code == 201
+    assert models.DocumentAccess.objects.filter(document=document, user=other).exists()

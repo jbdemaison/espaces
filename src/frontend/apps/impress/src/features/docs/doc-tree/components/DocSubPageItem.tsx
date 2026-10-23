@@ -263,10 +263,33 @@ const DocSubPageItemContent = (props: TreeViewNodeProps<Doc>) => {
           $width="100%"
           $overflow="hidden"
         >
-          <Text $css={ItemTextCss} $size="sm">
-            {displayTitle}
-          </Text>
-          {isRoom && <RoomOccupants roomId={doc.id} occupants={occupants} />}
+          <Box $direction="row" $align="center" $gap="4xs" $width="100%">
+            <Text $css={ItemTextCss} $size="sm">
+              {displayTitle}
+            </Text>
+            {isRoom && doc.is_favorite && (
+              <span
+                aria-label={t('Favorite', {
+                  description: 'Mark next to a favorite sub-space',
+                })}
+                data-testid={`room-star-${doc.id}`}
+                style={{ flexShrink: 0, fontSize: 12, lineHeight: 1 }}
+              >
+                ⭐
+              </span>
+            )}
+          </Box>
+          {isRoom && (
+            <RoomOccupants
+              roomId={doc.id}
+              occupants={occupants}
+              spaceId={
+                treeContext?.root?.kind === 'folder'
+                  ? treeContext.root.id
+                  : undefined
+              }
+            />
+          )}
         </Box>
         {areActionsVisible && (
           <DocTreeItemActions doc={doc} onOpenChange={onMenuOpenChange} />

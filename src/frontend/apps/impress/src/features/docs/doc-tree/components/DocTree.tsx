@@ -11,6 +11,7 @@ import { css } from 'styled-components';
 
 import { Box } from '@/components';
 import { Doc } from '@/docs/doc-management';
+import { SpaceReachable } from '@/features/rooms/components/SpaceReachable';
 import { TreeSkeleton } from '@/features/skeletons/components/TreeSkeleton';
 
 import { KEY_DOC_TREE, useDocTree } from '../api/useDocTree';
@@ -208,6 +209,12 @@ export const DocTree = ({ currentDoc }: DocTreeProps) => {
              instead of being placed at a fixed height. */
           height: auto !important;
 
+          /* the wrapper of the tree has a fixed height too: without this, what
+             comes under the rooms (the reachable people) overlaps the last ones */
+          > div {
+            height: auto !important;
+          }
+
           .c__tree-view {
             overflow: hidden !important;
             height: auto !important;
@@ -233,6 +240,12 @@ export const DocTree = ({ currentDoc }: DocTreeProps) => {
               align-items: flex-start !important;
               padding-top: 4px;
               padding-bottom: 4px;
+            }
+
+            /* the rows are positioned too: keep the drop line above them */
+            .c__tree-view__cursor {
+              z-index: 3;
+              pointer-events: none;
             }
 
             .c__tree-view--row {
@@ -280,6 +293,9 @@ export const DocTree = ({ currentDoc }: DocTreeProps) => {
             rootItemRef={rootItemRef}
           />
         )}
+      {treeContext.root.kind === 'folder' && (
+        <SpaceReachable spaceId={treeContext.root.id} />
+      )}
     </Box>
   );
 };

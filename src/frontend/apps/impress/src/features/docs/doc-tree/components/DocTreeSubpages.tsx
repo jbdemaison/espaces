@@ -14,6 +14,7 @@ import { Doc, useMoveDoc } from '@/docs/doc-management';
 import { focusMainContentStart } from '@/layouts/utils';
 import { useResponsiveStore } from '@/stores/useResponsiveStore';
 
+import { useDropCursorPlacement } from '../hooks/useDropCursorPlacement';
 import { isDocNode, isWithinTreeItemActions } from '../utils';
 
 import { DocSubPageItem } from './DocSubPageItem';
@@ -39,6 +40,8 @@ export const DocTreeSubpages = memo(function DocTreeSubpages({
   const treeContext = useTreeContext<Doc | null>();
   const { mutateAsync: moveDoc } = useMoveDoc();
   const { query } = useRouter();
+
+  useDropCursorPlacement(treeRoot);
 
   /**
    * The root item is the tree's only Tab stop; the sub pages are reached from
@@ -98,6 +101,10 @@ export const DocTreeSubpages = memo(function DocTreeSubpages({
       const parentValue = parentNode?.data.value;
       if (!parentValue || !isDocNode(parentValue)) {
         return canMoveInto && !hasCoarsePointer;
+      }
+      // A room holds nothing: nothing can be dropped into it
+      if (parentValue.kind === 'room') {
+        return false;
       }
       return parentValue.abilities.move && !hasCoarsePointer;
     },

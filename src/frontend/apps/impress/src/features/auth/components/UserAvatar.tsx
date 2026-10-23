@@ -31,11 +31,31 @@ const getInitialFromName = (name: string) => {
 
 type UserAvatarProps = {
   fullName?: string;
+  /** the profile picture, shown instead of the initials */
+  photoSrc?: string;
   background?: string;
 };
 
-export const UserAvatar = ({ fullName, background }: UserAvatarProps) => {
+export const UserAvatar = ({
+  fullName,
+  background,
+  photoSrc,
+}: UserAvatarProps) => {
   const name = fullName?.trim() || '?';
+
+  if (photoSrc) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        className="--docs--user-avatar"
+        src={photoSrc}
+        alt=""
+        width={24}
+        height={24}
+        style={{ borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }}
+      />
+    );
+  }
 
   return (
     <AvatarSvg

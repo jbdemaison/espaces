@@ -286,6 +286,7 @@ def test_api_document_accesses_list_authenticated_related_privileged(
                         "full_name": access.user.full_name,
                         "short_name": access.user.short_name,
                         "is_first_connection": access.user.is_first_connection,
+                        "avatar_version": None,
                     }
                     if access.user
                     else None

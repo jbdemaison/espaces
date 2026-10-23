@@ -19,18 +19,36 @@ from django.conf import settings
 import redis
 
 KEY_PREFIX = "livekit-presence"
+# Former single status (available, busy, away, reachable): only read, for "reachable",
+# so that nobody loses it when the new model is deployed
 STATUS_PREFIX = "livekit-status"
+# What the person says about their situation: an emoji and a short text
+SITUATION_PREFIX = "livekit-situation"
+# "Reachable" is a separate choice, whatever the situation
+REACHABLE_PREFIX = "livekit-reachable"
 CURRENT_ROOM_PREFIX = "livekit-current-room"
-STATUSES = ("available", "busy", "away")
-DEFAULT_STATUS = "available"
-# A status is forgotten after a long absence: nobody stays "busy" for days
+SITUATION_EMOJI_MAX_LENGTH = 16
+SITUATION_TEXT_MAX_LENGTH = 40
+# A situation is forgotten after 12 h without the page being open (the page renews
+# it while it is): nobody stays "in a meeting" until the next morning
 STATUS_TTL_SECONDS = 12 * 3600
+# "Reachable" is a standing choice: it holds until the person changes it
+REACHABLE_TTL_SECONDS = 30 * 24 * 3600
+INBOX_READY_PREFIX = "livekit-inbox-ready"
+# The page of a reachable person says every ~25 s that its inbox works; once it
+# stops, they are no longer shown as reachable after this long
+INBOX_READY_TTL_SECONDS = 60
 
 
 @lru_cache(maxsize=4)
 def _connect(url):
     """One client (and its connection pool) per Redis url and process."""
     return redis.Redis.from_url(url)
+
+
+def redis_client():
+    """The Redis client shared by everything that keeps short-lived state about calls."""
+    return _connect(settings.LIVEKIT_PRESENCE_REDIS_URL)
 
 
 def _key(room_name):
@@ -104,25 +122,100 @@ class PresenceStore:
             for room_name, raw_entries in zip(room_names, pipe.execute(), strict=True)
         }
 
-    def set_status(self, user_id, status):
-        """Remember the status a person chose (one of `STATUSES`)."""
-        if status not in STATUSES:
-            raise ValueError(f"Unknown status: {status}")
-        self._redis().set(f"{STATUS_PREFIX}:{user_id}", status, ex=STATUS_TTL_SECONDS)
+    def set_situation(self, user_id, emoji, text):
+        """
+        Remember the situation a person chose: an emoji and a short text.
 
-    def statuses(self, user_ids):
-        """The status of several people, in one round trip: {user id: status}."""
+        Both empty means "no situation": the previous one is forgotten.
+        """
+        emoji = (emoji or "").strip()
+        text = (text or "").strip()
+        key = f"{SITUATION_PREFIX}:{user_id}"
+        if not emoji and not text:
+            self._redis().delete(key)
+            return
+        self._redis().set(
+            key, json.dumps({"emoji": emoji, "text": text}), ex=STATUS_TTL_SECONDS
+        )
+
+    def touch_situation(self, user_id):
+        """Renew the situation of a person whose page is open: it is not forgotten."""
+        self._redis().expire(f"{SITUATION_PREFIX}:{user_id}", STATUS_TTL_SECONDS)
+
+    def situations(self, user_ids):
+        """
+        The situation of several people, in one round trip: {user id: situation}.
+
+        Only the people who have one are in the answer.
+        """
         user_ids = [str(user_id) for user_id in user_ids if user_id]
         if not user_ids:
             return {}
         values = self._redis().mget(
-            [f"{STATUS_PREFIX}:{user_id}" for user_id in user_ids]
+            [f"{SITUATION_PREFIX}:{user_id}" for user_id in user_ids]
         )
         result = {}
         for user_id, value in zip(user_ids, values, strict=True):
-            status = value.decode() if isinstance(value, bytes) else value
-            result[user_id] = status if status in STATUSES else DEFAULT_STATUS
+            if not value:
+                continue
+            try:
+                situation = json.loads(value)
+            except ValueError:
+                continue
+            result[user_id] = {
+                "emoji": situation.get("emoji", ""),
+                "text": situation.get("text", ""),
+            }
         return result
+
+    def set_reachable(self, user_id, reachable):
+        """Remember whether a person accepts to be invited to join a room."""
+        key = f"{REACHABLE_PREFIX}:{user_id}"
+        if reachable:
+            self._redis().set(key, 1, ex=REACHABLE_TTL_SECONDS)
+        else:
+            self._redis().delete(key)
+            # the former status could still say "reachable"
+            self._redis().delete(f"{STATUS_PREFIX}:{user_id}")
+
+    def reachable(self, user_ids):
+        """Among the users, the ids of those who accept to be invited."""
+        user_ids = [str(user_id) for user_id in user_ids if user_id]
+        if not user_ids:
+            return set()
+        pipe = self._redis().pipeline()
+        pipe.mget([f"{REACHABLE_PREFIX}:{user_id}" for user_id in user_ids])
+        pipe.mget([f"{STATUS_PREFIX}:{user_id}" for user_id in user_ids])
+        current, former = pipe.execute()
+        return {
+            user_id
+            for user_id, value, old in zip(user_ids, current, former, strict=True)
+            if value is not None or old in (b"reachable", "reachable")
+        }
+
+    def mark_inbox_ready(self, user_id):
+        """
+        Remember that the page of a person is connected to their inbox *and able to
+        receive*: being listed by LiveKit is not enough, a browser whose connection
+        never completes is listed for a while too.
+        """
+        self._redis().set(
+            f"{INBOX_READY_PREFIX}:{user_id}", 1, ex=INBOX_READY_TTL_SECONDS
+        )
+
+    def inbox_ready(self, user_ids):
+        """Among the users, the ids of those whose page says its inbox works."""
+        user_ids = [str(user_id) for user_id in user_ids if user_id]
+        if not user_ids:
+            return set()
+        values = self._redis().mget(
+            [f"{INBOX_READY_PREFIX}:{user_id}" for user_id in user_ids]
+        )
+        return {
+            user_id
+            for user_id, value in zip(user_ids, values, strict=True)
+            if value is not None
+        }
 
     def set_current_room(self, user_id, room_name):
         """

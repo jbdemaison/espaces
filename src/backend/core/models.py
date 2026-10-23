@@ -178,6 +178,13 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
         default=settings.TIME_ZONE,
         help_text=_("The timezone in which the user wants to see times."),
     )
+    avatar_updated_at = models.DateTimeField(
+        _("profile picture updated on"),
+        null=True,
+        blank=True,
+        editable=False,
+        help_text=_("Set when the user has a profile picture."),
+    )
     is_device = models.BooleanField(
         _("device"),
         default=False,
@@ -462,6 +469,28 @@ class User(AbstractBaseUser, BaseModel, auth_models.PermissionsMixin):
         Must be cached if retrieved remotely.
         """
         return []
+
+
+class UserAvatar(models.Model):
+    """
+    The profile picture of a user, kept apart from the user so that it is never
+    loaded with it: the picture is small (cropped and shrunk by the browser) but the
+    user is loaded on every request.
+    """
+
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, primary_key=True, related_name="avatar"
+    )
+    content_type = models.CharField(max_length=20)
+    data = models.BinaryField()
+
+    class Meta:
+        db_table = "impress_user_avatar"
+        verbose_name = _("user avatar")
+        verbose_name_plural = _("user avatars")
+
+    def __str__(self):
+        return f"Avatar of {self.user_id}"
 
 
 class UserReconciliation(BaseModel):
@@ -1647,6 +1676,9 @@ class DocumentFavorite(BaseModel):
     user = models.ForeignKey(
         User, on_delete=models.CASCADE, related_name="favorite_documents"
     )
+    # For a favorite sub-space (a room): the person can be invited to join it while
+    # they are "reachable", even when they are not connected to it.
+    reachable = models.BooleanField(_("reachable"), default=False)
 
     class Meta:
         db_table = "impress_document_favorite"
@@ -1665,6 +1697,36 @@ class DocumentFavorite(BaseModel):
 
     def __str__(self):
         return f"{self.user!s} favorite on document {self.document!s}"
+
+
+class SpaceSound(BaseModel):
+    """
+    A short sound of a space, played in its video rooms by whoever clicks on it.
+    The sound is kept in the database, apart from the documents: it is small
+    (a few seconds, limited when it is sent) and is only read when it is played.
+    """
+
+    space = models.ForeignKey(Document, on_delete=models.CASCADE, related_name="sounds")
+    name = models.CharField(_("name"), max_length=40)
+    emoji = models.CharField(_("emoji"), max_length=16, default="🔊")
+    content_type = models.CharField(max_length=20)
+    data = models.BinaryField()
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        db_table = "impress_space_sound"
+        ordering = ("created_at",)
+        verbose_name = _("space sound")
+        verbose_name_plural = _("space sounds")
+
+    def __str__(self):
+        return f"{self.name} ({self.space_id})"
 
 
 class DocumentAccess(BaseAccess):

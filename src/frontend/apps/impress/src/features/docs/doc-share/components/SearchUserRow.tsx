@@ -6,7 +6,7 @@ import {
   QuickSearchItemContentProps,
 } from '@/components/quick-search';
 import { useCunninghamTheme } from '@/cunningham';
-import { User, UserAvatar } from '@/features/auth';
+import { User, UserAvatar, avatarSrc } from '@/features/auth';
 
 type Props = {
   user: User;
@@ -37,6 +37,11 @@ export const SearchUserRow = ({
         >
           <UserAvatar
             fullName={user.full_name || user.email}
+            photoSrc={
+              user.avatar_version
+                ? avatarSrc(user.id, user.avatar_version)
+                : undefined
+            }
             background={isInvitation ? colorsTokens['gray-400'] : undefined}
           />
           <Box $direction="column">

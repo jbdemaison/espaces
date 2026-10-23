@@ -8,7 +8,18 @@ from lasuite.oidc_resource_server.urls import urlpatterns as oidc_resource_serve
 from rest_framework.routers import DefaultRouter
 
 from core.api import viewsets
-from core.api.livekit_webhook import LiveKitWebhookView, UserStatusView
+from core.api.invitations import (
+    InvitationAnswerView,
+    InvitationsView,
+    InvitationView,
+)
+from core.api.livekit_webhook import (
+    LiveKitWebhookView,
+    UserInboxReadyView,
+    UserInboxView,
+    UserStatusView,
+)
+from core.api.sounds import SpaceSoundsView, SpaceSoundView
 from core.external_api import viewsets as external_api_viewsets
 
 # - Main endpoints
@@ -93,6 +104,41 @@ urlpatterns = [
         f"api/{settings.API_VERSION}/user-status/",
         UserStatusView.as_view(),
         name="user-status",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/invitations/",
+        InvitationsView.as_view(),
+        name="invitations",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/invitations/<uuid:invitation_id>/",
+        InvitationView.as_view(),
+        name="invitation",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/invitations/<uuid:invitation_id>/answer/",
+        InvitationAnswerView.as_view(),
+        name="invitation-answer",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/documents/<uuid:document_id>/sounds/",
+        SpaceSoundsView.as_view(),
+        name="space-sounds",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/documents/<uuid:document_id>/sounds/<uuid:sound_id>/",
+        SpaceSoundView.as_view(),
+        name="space-sound",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/user-inbox/ready/",
+        UserInboxReadyView.as_view(),
+        name="user-inbox-ready",
+    ),
+    path(
+        f"api/{settings.API_VERSION}/user-inbox/",
+        UserInboxView.as_view(),
+        name="user-inbox",
     ),
     # Public keys validating the tokens we issue to call external services.
     # Nested under "api/" because this is the only prefix routed to the backend

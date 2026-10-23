@@ -21,6 +21,8 @@ from core.services import livekit_rooms
 from core.services.livekit_presence import (
     CURRENT_ROOM_PREFIX,
     KEY_PREFIX,
+    REACHABLE_PREFIX,
+    SITUATION_PREFIX,
     STATUS_PREFIX,
     PresenceStore,
 )
@@ -46,7 +48,13 @@ def no_live_livekit():
 def clean_presence():
     """Presence lives in Redis, outside of the test transaction: empty it around tests."""
     redis = PresenceStore._redis()  # pylint: disable=protected-access
-    prefixes = (KEY_PREFIX, STATUS_PREFIX, CURRENT_ROOM_PREFIX)
+    prefixes = (
+        KEY_PREFIX,
+        STATUS_PREFIX,
+        SITUATION_PREFIX,
+        REACHABLE_PREFIX,
+        CURRENT_ROOM_PREFIX,
+    )
     for prefix in prefixes:
         for key in redis.scan_iter(f"{prefix}:*"):
             redis.delete(key)
@@ -303,8 +311,20 @@ def test_api_documents_room_presence_lists_names_not_identities():
     assert response.status_code == 200
     assert response.json() == {
         "participants": [
-            {"user_id": "u1", "name": "Ana", "status": "available"},
-            {"user_id": "u2", "name": "Bob", "status": "available"},
+            {
+                "user_id": "u1",
+                "name": "Ana",
+                "situation": None,
+                "reachable": False,
+                "avatar_version": None,
+            },
+            {
+                "user_id": "u2",
+                "name": "Bob",
+                "situation": None,
+                "reachable": False,
+                "avatar_version": None,
+            },
         ]
     }
 
@@ -353,9 +373,17 @@ def test_api_documents_rooms_presence_gives_each_visible_room():
     assert response.status_code == 200
     assert response.json() == {
         "rooms": {
-            str(lounge.id): [{"user_id": "u1", "name": "Ana", "status": "available"}],
+            str(lounge.id): [
+                {
+                    "user_id": "u1",
+                    "name": "Ana",
+                    "situation": None,
+                    "reachable": False,
+                    "avatar_version": None,
+                }
+            ],
             str(standup.id): [],
-        }
+        },
     }
 
 
@@ -439,24 +467,38 @@ def test_api_documents_room_presence_live_livekit_wins_over_the_webhooks():
 
     assert response.status_code == 200
     assert response.json() == {
-        "participants": [{"user_id": "u1", "name": "Ana", "status": "available"}]
+        "participants": [
+            {
+                "user_id": "u1",
+                "name": "Ana",
+                "situation": None,
+                "reachable": False,
+                "avatar_version": None,
+            }
+        ]
     }
 
 
-def test_api_documents_room_presence_shows_the_chosen_status():
-    """The status chosen by a person is shown next to them in the room."""
+def test_api_documents_room_presence_shows_the_chosen_situation():
+    """The situation chosen by a person is shown next to them in the room."""
     user = factories.UserFactory()
     other = factories.UserFactory()
     room = make_room(link_reach="authenticated")
     PresenceStore().join(str(room.id), "sub-1", "PA_1", "Bob", user_id=str(other.pk))
-    PresenceStore().set_status(other.pk, "busy")
+    PresenceStore().set_situation(other.pk, "🎧", "Focus")
     client = APIClient()
     client.force_login(user)
 
     response = client.get(f"/api/v1.0/documents/{room.id!s}/room-presence/")
 
     assert response.json()["participants"] == [
-        {"user_id": str(other.pk), "name": "Bob", "status": "busy"}
+        {
+            "user_id": str(other.pk),
+            "name": "Bob",
+            "situation": {"emoji": "🎧", "text": "Focus"},
+            "reachable": False,
+            "avatar_version": None,
+        }
     ]
 
 
@@ -468,29 +510,99 @@ def test_api_user_status_anonymous():
 
 
 def test_api_user_status_default_then_change():
-    """Everybody is available until they choose otherwise, and the choice is kept."""
+    """Nobody has a situation until they choose one, and the choice is kept."""
     user = factories.UserFactory()
     client = APIClient()
     client.force_login(user)
 
-    assert client.get("/api/v1.0/user-status/").json() == {"status": "available"}
+    assert client.get("/api/v1.0/user-status/").json() == {
+        "emoji": "",
+        "text": "",
+        "reachable": False,
+    }
 
-    response = client.put("/api/v1.0/user-status/", {"status": "away"}, format="json")
+    response = client.put(
+        "/api/v1.0/user-status/",
+        {"emoji": "🍽️", "text": "  Au déjeuner "},
+        format="json",
+    )
 
     assert response.status_code == 200
-    assert client.get("/api/v1.0/user-status/").json() == {"status": "away"}
+    assert client.get("/api/v1.0/user-status/").json() == {
+        "emoji": "🍽️",
+        "text": "Au déjeuner",
+        "reachable": False,
+    }
 
 
-def test_api_user_status_refuses_unknown_status():
-    """Only the known statuses are accepted."""
+def test_api_user_status_empty_situation_clears_it():
+    """Sending nothing removes the situation, and leaves "reachable" alone."""
+    client = APIClient()
+    client.force_login(factories.UserFactory())
+    client.put(
+        "/api/v1.0/user-status/",
+        {"emoji": "🏠", "text": "Télétravail", "reachable": True},
+        format="json",
+    )
+
+    response = client.put(
+        "/api/v1.0/user-status/", {"emoji": "", "text": ""}, format="json"
+    )
+
+    assert response.json() == {"emoji": "", "text": "", "reachable": True}
+
+
+def test_api_user_status_emoji_only_is_a_situation():
+    """An emoji alone is enough."""
     client = APIClient()
     client.force_login(factories.UserFactory())
 
-    response = client.put(
-        "/api/v1.0/user-status/", {"status": "dancing"}, format="json"
-    )
+    response = client.put("/api/v1.0/user-status/", {"emoji": "🌴"}, format="json")
+
+    assert response.json() == {"emoji": "🌴", "text": "", "reachable": False}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"text": "x" * 41},
+        {"text": "deux\nlignes"},
+        {"emoji": "e" * 17},
+        {"text": 12},
+        {"reachable": "yes"},
+    ],
+)
+def test_api_user_status_refuses_invalid_values(payload):
+    """Too long, several lines or the wrong type: refused, nothing changes."""
+    client = APIClient()
+    client.force_login(factories.UserFactory())
+
+    response = client.put("/api/v1.0/user-status/", payload, format="json")
 
     assert response.status_code == 400
+    assert client.get("/api/v1.0/user-status/").json() == {
+        "emoji": "",
+        "text": "",
+        "reachable": False,
+    }
+
+
+def test_api_user_status_situation_lasts_12_hours_and_is_renewed_when_open():
+    """The situation is forgotten 12 h after the page was last open."""
+    user = factories.UserFactory()
+    client = APIClient()
+    client.force_login(user)
+    client.put(
+        "/api/v1.0/user-status/", {"emoji": "🎧", "text": "Focus"}, format="json"
+    )
+    redis = PresenceStore._redis()  # pylint: disable=protected-access
+    key = f"{SITUATION_PREFIX}:{user.pk}"
+    assert 11 * 3600 < redis.ttl(key) <= 12 * 3600
+
+    redis.expire(key, 60)
+    client.get("/api/v1.0/user-status/")
+
+    assert redis.ttl(key) > 11 * 3600
 
 
 def test_api_documents_room_presence_only_in_the_last_room_joined():

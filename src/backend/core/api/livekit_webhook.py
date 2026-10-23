@@ -6,7 +6,11 @@ from rest_framework.views import APIView
 
 from core.services import livekit_tokens
 from core.services.livekit_events import LiveKitEventsService, LiveKitWebhookError
-from core.services.livekit_presence import STATUSES, PresenceStore
+from core.services.livekit_presence import (
+    SITUATION_EMOJI_MAX_LENGTH,
+    SITUATION_TEXT_MAX_LENGTH,
+    PresenceStore,
+)
 
 
 class LiveKitWebhookView(APIView):
@@ -41,22 +45,97 @@ class LiveKitWebhookView(APIView):
 
 
 class UserStatusView(APIView):
-    """The status a person chose (available, busy, away), shown on their round of initials."""
+    """
+    What a person says about themselves: their situation (an emoji and a short text,
+    seen by the people of the spaces they are in) and whether they are reachable
+    (others may invite them to join a room), whatever the situation.
+    """
 
     permission_classes = [IsAuthenticated]
 
+    @staticmethod
+    def _answer(user_id):
+        store = PresenceStore()
+        situation = store.situations([user_id]).get(str(user_id), {})
+        return {
+            "emoji": situation.get("emoji", ""),
+            "text": situation.get("text", ""),
+            "reachable": str(user_id) in store.reachable([user_id]),
+        }
+
     def get(self, request, *args, **kwargs):
-        """Give the status of the current user."""
-        status_by_user = PresenceStore().statuses([request.user.pk])
-        return response.Response({"status": status_by_user[str(request.user.pk)]})
+        """Give the situation and the reachability of the current user."""
+        # opening the page keeps the situation alive
+        PresenceStore().touch_situation(request.user.pk)
+        return response.Response(self._answer(request.user.pk))
 
     def put(self, request, *args, **kwargs):
-        """Change the status of the current user."""
-        new_status = request.data.get("status")
-        if new_status not in STATUSES:
+        """Change the situation and/or the reachability of the current user."""
+        data = request.data
+        store = PresenceStore()
+        errors = {}
+
+        if "reachable" in data and not isinstance(data["reachable"], bool):
+            errors["reachable"] = ["Must be true or false."]
+
+        has_situation = "emoji" in data or "text" in data
+        emoji = data.get("emoji", "")
+        text = data.get("text", "")
+        if has_situation:
+            if not isinstance(emoji, str) or not isinstance(text, str):
+                errors["text"] = ["Must be a string."]
+            else:
+                emoji, text = emoji.strip(), text.strip()
+                if len(emoji) > SITUATION_EMOJI_MAX_LENGTH:
+                    errors["emoji"] = ["Too long."]
+                if len(text) > SITUATION_TEXT_MAX_LENGTH:
+                    errors["text"] = [
+                        f"At most {SITUATION_TEXT_MAX_LENGTH} characters."
+                    ]
+                elif any(char in text for char in "\n\r\t"):
+                    errors["text"] = ["Must fit on one line."]
+        if errors:
+            return response.Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        if has_situation:
+            store.set_situation(request.user.pk, emoji, text)
+        if "reachable" in data:
+            store.set_reachable(request.user.pk, data["reachable"])
+        return response.Response(self._answer(request.user.pk))
+
+
+class UserInboxView(APIView):
+    """
+    The details to connect to one's personal inbox room, kept open while "reachable".
+
+    The connection tells the others that the person is there, and carries the
+    invitations they are sent.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        """Give the connection details of the inbox of the current user."""
+        try:
+            details = livekit_tokens.generate_inbox_token(request.user)
+        except livekit_tokens.LiveKitNotConfigured:
             return response.Response(
-                {"status": [f"Must be one of: {', '.join(STATUSES)}."]},
-                status=status.HTTP_400_BAD_REQUEST,
+                {"detail": "Video rooms are not available on this instance."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-        PresenceStore().set_status(request.user.pk, new_status)
-        return response.Response({"status": new_status})
+        return response.Response({"livekit": details})
+
+
+class UserInboxReadyView(APIView):
+    """
+    The page of a reachable person says, every few seconds, that its connection to
+    the inbox is complete: only then can it receive an invitation.
+    """
+
+    permission_classes = [IsAuthenticated]
+    throttle_scope = "presence"
+
+    def post(self, request, *args, **kwargs):
+        """Remember that the inbox of the current user works."""
+        PresenceStore().mark_inbox_ready(request.user.pk)
+        return response.Response(status=status.HTTP_204_NO_CONTENT)

@@ -6,6 +6,7 @@ import { css } from 'styled-components';
 
 import { DocDefaultFilter, useTrans } from '@/docs/doc-management';
 import { DocsGrid } from '@/docs/docs-grid';
+import { FavoriteSpaces } from '@/features/rooms/components/FavoriteSpaces';
 import { HeaderFloatingBar } from '@/features/header/components/HeaderFloatingBar';
 import { CreateRoomDialogHost } from '@/features/rooms/components/CreateRoomDialogHost';
 import { MainLayout } from '@/layouts';
@@ -43,7 +44,11 @@ const Page: NextPageWithLayout = () => {
             : undefined
         }
       />
-      <DocsGrid target={target} />
+      {target === DocDefaultFilter.STARRED ? (
+        <FavoriteSpaces />
+      ) : (
+        <DocsGrid target={target} />
+      )}
     </>
   );
 };

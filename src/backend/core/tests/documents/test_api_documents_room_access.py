@@ -315,9 +315,12 @@ def test_api_documents_room_cannot_have_children():
     client = APIClient()
     client.force_login(user)
 
-    assert client.get(f"/api/v1.0/documents/{room.id!s}/").json()["abilities"][
-        "children_create"
-    ] is False
+    assert (
+        client.get(f"/api/v1.0/documents/{room.id!s}/").json()["abilities"][
+            "children_create"
+        ]
+        is False
+    )
     response = client.post(
         f"/api/v1.0/documents/{room.id!s}/children/",
         {"title": "below the room", "kind": "room"},

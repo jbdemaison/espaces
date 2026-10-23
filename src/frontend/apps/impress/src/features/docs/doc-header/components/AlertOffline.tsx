@@ -3,7 +3,11 @@ import { useTranslation } from 'react-i18next';
 import { Box, Card, Icon, Text } from '@/components';
 import { useCunninghamTheme } from '@/cunningham';
 
-export const AlertOffline = () => {
+/**
+ * The banner telling the user that the connection is lost. In a video room there is
+ * nothing to edit: the video and the chat need the connection.
+ */
+export const AlertOffline = ({ forRoom = false }: { forRoom?: boolean }) => {
   const { t } = useTranslation();
   const { spacingsTokens } = useCunninghamTheme();
 
@@ -29,10 +33,18 @@ export const AlertOffline = () => {
           $shrink="0"
         />
         <Text $theme="warning">
-          {t(
-            "You're offline. You can keep editing, and your changes will sync automatically once you're back online.",
-            { description: 'Banner shown when the connection is lost' },
-          )}
+          {forRoom
+            ? t(
+                "You're offline. The video and the chat will work again once you're back online.",
+                {
+                  description:
+                    'Banner shown in a video room when the connection is lost',
+                },
+              )
+            : t(
+                "You're offline. You can keep editing, and your changes will sync automatically once you're back online.",
+                { description: 'Banner shown when the connection is lost' },
+              )}
         </Text>
       </Box>
     </Card>

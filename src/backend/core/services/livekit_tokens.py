@@ -7,6 +7,9 @@ from django.conf import settings
 
 from livekit.api import AccessToken, VideoGrants
 
+# The inbox stays connected for as long as the page is open: a long-lived token
+INBOX_TOKEN_TTL_SECONDS = 24 * 3600
+
 
 class LiveKitNotConfigured(Exception):
     """Raised when the LiveKit server settings are missing."""
@@ -97,4 +100,48 @@ def generate_room_token(document, user, room_abilities):
         .to_jwt()
     )
 
+    return {"url": configuration["url"], "room": room_name, "token": token}
+
+
+def get_inbox_room_name(user):
+    """
+    Name of the personal "inbox" room of a user: nobody else is ever in it.
+
+    A person who is reachable stays connected to it, without sound or video, so that
+    an invitation can be pushed to them at once, wherever they are in the application.
+    The connection is also the proof that they are there: it ends with the browser.
+    """
+    return f"inbox-{user.pk}"
+
+
+def generate_inbox_token(user):
+    """Connection details to the personal inbox room: listen only."""
+    if not is_configured():
+        raise LiveKitNotConfigured("LiveKit is not configured.")
+
+    configuration = settings.LIVEKIT_CONFIGURATION
+    room_name = get_inbox_room_name(user)
+    grants = VideoGrants(
+        room=room_name,
+        room_join=True,
+        can_publish=False,
+        can_publish_data=False,
+        # nothing is ever published in an inbox, but the messages pushed to it
+        # (the invitations) only reach those who may subscribe
+        can_subscribe=True,
+        can_update_own_metadata=False,
+    )
+    token = (
+        AccessToken(
+            api_key=configuration["api_key"],
+            api_secret=configuration["api_secret"],
+        )
+        .with_grants(grants)
+        # one identity per connection: a person with two tabs open has two
+        .with_identity(f"inbox-{get_participant_identity(user)}-{uuid4().hex[:8]}")
+        .with_name(get_participant_name(user))
+        .with_attributes({"user_id": str(user.pk)})
+        .with_ttl(timedelta(seconds=INBOX_TOKEN_TTL_SECONDS))
+        .to_jwt()
+    )
     return {"url": configuration["url"], "room": room_name, "token": token}

@@ -491,6 +491,36 @@ class Base(Configuration):
                 environ_name="API_MENTION_THROTTLE_RATE",
                 environ_prefix=None,
             ),
+            "avatar_write": values.Value(
+                default="20/hour",
+                environ_name="API_AVATAR_WRITE_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
+            "avatar_read": values.Value(
+                default="600/minute",
+                environ_name="API_AVATAR_READ_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
+            "presence": values.Value(
+                default="240/minute",
+                environ_name="API_PRESENCE_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
+            "room_invitation": values.Value(
+                default="30/minute",
+                environ_name="API_ROOM_INVITATION_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
+            "sound": values.Value(
+                default="120/minute",
+                environ_name="API_SOUND_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
+            "sound_read": values.Value(
+                default="600/minute",
+                environ_name="API_SOUND_READ_THROTTLE_RATE",
+                environ_prefix=None,
+            ),
             "config": values.Value(
                 default="30/minute",
                 environ_name="API_CONFIG_THROTTLE_RATE",

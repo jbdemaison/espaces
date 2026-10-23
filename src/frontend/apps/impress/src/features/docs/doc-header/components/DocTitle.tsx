@@ -112,7 +112,9 @@ const DocTitleEmojiPicker = ({ doc }: DocTitleProps) => {
 const DocTitleInput = ({ doc, onTitleUpdate }: DocTitleProps) => {
   const { isSmallMobile } = useResponsiveStore();
   const { t } = useTranslation();
-  const { isTopRoot } = useDocUtils(doc);
+  const { isTopRoot: isRootDoc } = useDocUtils(doc);
+  // A space keeps its emoji apart from its title, like a sub-document
+  const isTopRoot = isRootDoc && doc.kind !== 'folder';
   const { untitledDocument } = useTrans();
   const { emoji, titleWithoutEmoji } = getEmojiAndTitle(doc.title ?? '');
   const wrapperRef = useRef<HTMLDivElement>(null);

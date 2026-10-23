@@ -10,6 +10,7 @@ the people currently in the rooms concerned against what they can do now, and
 - adjusts the right to speak of the others.
 """
 
+import json
 import logging
 
 from django.apps import apps
@@ -18,13 +19,16 @@ from django.conf import settings
 from asgiref.sync import async_to_sync
 from livekit.api import (
     ListParticipantsRequest,
+    ListRoomsRequest,
     LiveKitAPI,
     ParticipantPermission,
     RoomParticipantIdentity,
+    SendDataRequest,
     TrackSource,
     TwirpError,
     UpdateParticipantRequest,
 )
+from livekit.protocol.models import DataPacket
 
 from core.services import livekit_tokens
 from core.services.livekit_presence import PresenceStore
@@ -150,6 +154,95 @@ async def _list(room_names):
     return result
 
 
+async def _online_inboxes(users):
+    configuration = settings.LIVEKIT_CONFIGURATION
+    lkapi = LiveKitAPI(
+        url=configuration.get("internal_url") or configuration["url"],
+        api_key=configuration["api_key"],
+        api_secret=configuration["api_secret"],
+    )
+    names = {livekit_tokens.get_inbox_room_name(user): user for user in users}
+    try:
+        answer = await lkapi.room.list_rooms(ListRoomsRequest(names=list(names)))
+    finally:
+        await lkapi.aclose()
+    return {
+        str(names[room.name].pk)
+        for room in answer.rooms
+        if room.name in names and room.num_participants > 0
+    }
+
+
+def listed_inboxes(users):
+    """
+    The ids of the users, among those given, whom LiveKit lists in their inbox now.
+
+    Returns None when the LiveKit server cannot be asked.
+    """
+    users = list(users)
+    if not users:
+        return set()
+    if not livekit_tokens.is_configured():
+        return None
+    try:
+        return async_to_sync(_online_inboxes)(users)
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.warning("Could not list the inboxes of LiveKit", exc_info=True)
+        return None
+
+
+def online_inboxes(users):
+    """
+    The ids of the users, among those given, who are connected to their inbox now
+    and whose page has confirmed that it receives (see `PresenceStore.inbox_ready`):
+    a browser whose connection never completes is listed by LiveKit too, but would
+    never see an invitation.
+
+    Returns None when the LiveKit server cannot be asked: nobody can be said to be
+    reachable then.
+    """
+    listed = listed_inboxes(users)
+    if listed is None:
+        return None
+    return listed & PresenceStore().inbox_ready(listed)
+
+
+async def _send_to_inbox(user, message):
+    configuration = settings.LIVEKIT_CONFIGURATION
+    lkapi = LiveKitAPI(
+        url=configuration.get("internal_url") or configuration["url"],
+        api_key=configuration["api_key"],
+        api_secret=configuration["api_secret"],
+    )
+    try:
+        await lkapi.room.send_data(
+            SendDataRequest(
+                room=livekit_tokens.get_inbox_room_name(user),
+                data=json.dumps(message).encode(),
+                kind=DataPacket.Kind.RELIABLE,
+                topic="espaces",
+            )
+        )
+    finally:
+        await lkapi.aclose()
+
+
+def send_to_inbox(user, message):
+    """
+    Push a message (a dict) to the personal inbox room of a user, at once.
+
+    Returns whether LiveKit accepted it: it does not say whether somebody read it.
+    """
+    if not livekit_tokens.is_configured():
+        return False
+    try:
+        async_to_sync(_send_to_inbox)(user, message)
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.warning("Could not send a message to an inbox", exc_info=True)
+        return False
+    return True
+
+
 def live_participants(room_names):
     """
     Ask the LiveKit server who is in some rooms right now: {room name: people}.
@@ -174,7 +267,9 @@ def remove_from_room(room_name, identity):
     try:
         _apply(room_name, [identity], {})
     except Exception:  # pylint: disable=broad-exception-caught
-        logger.warning("Could not remove %s from %s", identity, room_name, exc_info=True)
+        logger.warning(
+            "Could not remove %s from %s", identity, room_name, exc_info=True
+        )
 
 
 def recheck_room(document, user_id=None):

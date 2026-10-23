@@ -4,6 +4,10 @@ import { useTranslation } from 'react-i18next';
 
 import { SkipToContent } from '@/components';
 import { AppProvider } from '@/core/';
+import { ProfilePhotoHost } from '@/features/auth/components/ProfilePhotoButton';
+import { InactivityHost } from '@/features/rooms/components/InactivityHost';
+import { InvitationsHost } from '@/features/rooms/components/InvitationsHost';
+import { ReachableChannel } from '@/features/rooms/components/ReachableChannel';
 import { useOffline, useSWRegister } from '@/features/service-worker/';
 import '@/i18n/initI18n';
 import { NextPageWithLayout } from '@/types/next';
@@ -50,6 +54,10 @@ export default function App({ Component, pageProps }: AppPropsWithLayout) {
       </Head>
       <AppProvider>
         <SkipToContent />
+        <ReachableChannel />
+        <InvitationsHost />
+        <InactivityHost />
+        <ProfilePhotoHost />
         {getLayout(<Component {...pageProps} />)}
       </AppProvider>
     </>

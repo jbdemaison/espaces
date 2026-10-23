@@ -13,6 +13,8 @@ export interface User {
   full_name: string;
   short_name: string;
   language?: string;
+  /** changes with the profile picture; null or missing without one */
+  avatar_version?: number | null;
 }
 
 export type UserLight = Pick<User, 'full_name' | 'short_name'>;

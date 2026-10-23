@@ -1,0 +1,6 @@
+# Fichiers générés sur le serveur par preparer.sh : jamais dans Git (mots de passe, clés)
+.env
+env.d/
+keys/
+data/
+realm.json

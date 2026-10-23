@@ -1,0 +1,20 @@
+# Caddy obtient et renouvelle seul les certificats HTTPS (Let's Encrypt).
+{
+	email {$ACME_EMAIL}
+}
+
+# L'application (interface, API, édition collaborative, fichiers protégés)
+{$DOCS_HOST} {
+	encode zstd gzip
+	reverse_proxy frontend:8083
+}
+
+# La connexion des utilisateurs (Keycloak)
+{$KEYCLOAK_HOST} {
+	reverse_proxy keycloak:8080
+}
+
+# Le stockage des fichiers (MinIO), lu par l'application
+{$S3_HOST} {
+	reverse_proxy minio:9000
+}

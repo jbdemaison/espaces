@@ -1,0 +1,221 @@
+# Espaces — configuration de production pour UN serveur (Docker Compose).
+# Ne modifiez pas ce fichier : tout se règle dans .env et env.d/ (créés par preparer.sh).
+name: espaces
+
+services:
+  # Reçoit tout le trafic web et gère les certificats HTTPS automatiquement.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DOCS_HOST
+      - KEYCLOAK_HOST
+      - S3_HOST
+      - ACME_EMAIL
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy:/data
+    # Les autres conteneurs joignent les adresses publiques en passant par Caddy,
+    # sans sortir sur Internet (même certificat, même chemin que les navigateurs).
+    networks:
+      default:
+        aliases:
+          - ${DOCS_HOST}
+          - ${KEYCLOAK_HOST}
+          - ${S3_HOST}
+
+  postgresql:
+    image: postgres:16
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 2s
+      timeout: 2s
+      retries: 120
+    env_file:
+      - env.d/postgresql
+    volumes:
+      - ./data/postgresql:/var/lib/postgresql/data/pgdata
+
+  # Cache, file d'attente des tâches ET présence dans les salons / joignables :
+  # le journal (appendonly) évite de tout perdre à un redémarrage.
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ./data/redis:/data
+
+  # Base de travail du serveur d'édition collaborative : ce n'est pas un cache.
+  yhub-valkey:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    command: ["valkey-server", "--maxmemory-policy", "volatile-lru",
+              "--appendonly", "yes", "--appendfsync", "everysec"]
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+    volumes:
+      - ./data/yhub-valkey:/data
+
+  backend:
+    image: ${IMAGE_REPO:-ghcr.io/jbdemaison/espaces}/backend:${IMAGE_TAG:-espaces}
+    user: ${DOCKER_USER:-1000}
+    restart: unless-stopped
+    environment:
+      - DJANGO_CONFIGURATION=Production
+    env_file:
+      - env.d/common
+      - env.d/backend
+      - env.d/yprovider
+      - env.d/postgresql
+    volumes:
+      - ./keys/private.pem:/keys/private.pem:ro
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check"]
+      interval: 15s
+      timeout: 30s
+      retries: 20
+      start_period: 20s
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  celery:
+    image: ${IMAGE_REPO:-ghcr.io/jbdemaison/espaces}/backend:${IMAGE_TAG:-espaces}
+    user: ${DOCKER_USER:-1000}
+    restart: unless-stopped
+    command: ["celery", "-A", "impress.celery_app", "worker", "-l", "INFO"]
+    environment:
+      - DJANGO_CONFIGURATION=Production
+    env_file:
+      - env.d/common
+      - env.d/backend
+      - env.d/yprovider
+      - env.d/postgresql
+    volumes:
+      - ./keys/private.pem:/keys/private.pem:ro
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # Serveur d'édition collaborative (contenu des documents).
+  # Son schéma est créé par : docker compose run --rm yhub yarn init-db
+  yhub:
+    image: ${IMAGE_REPO:-ghcr.io/jbdemaison/espaces}/yhub:${IMAGE_TAG:-espaces}
+    user: ${DOCKER_USER:-1000}
+    restart: unless-stopped
+    env_file:
+      - env.d/common
+      - env.d/yhub
+    volumes:
+      - ./keys/yhub-private.pem:/keys/yhub-private.pem:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3002/collaboration/ready/v1').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      yhub-valkey:
+        condition: service_healthy
+
+  # Conversion de documents (export Markdown, HTML, PDF, DOCX).
+  y-provider:
+    image: ${IMAGE_REPO:-ghcr.io/jbdemaison/espaces}/y-provider:${IMAGE_TAG:-espaces}
+    user: ${DOCKER_USER:-1000}
+    restart: unless-stopped
+    env_file:
+      - env.d/common
+      - env.d/yprovider
+
+  # L'interface, et le nginx qui répartit les requêtes (API, édition, fichiers).
+  frontend:
+    image: ${IMAGE_REPO:-ghcr.io/jbdemaison/espaces}/frontend:${IMAGE_TAG:-espaces}
+    user: "101"
+    restart: unless-stopped
+    entrypoint:
+      - /docker-entrypoint.sh
+    command: ["nginx", "-g", "daemon off;"]
+    env_file:
+      - env.d/common
+    volumes:
+      - ./default.conf.template:/etc/nginx/templates/docs.conf.template:ro
+    depends_on:
+      caddy:
+        condition: service_started
+      backend:
+        condition: service_healthy
+      yhub:
+        condition: service_healthy
+
+  # Connexion des utilisateurs (OpenID Connect).
+  kc_postgresql:
+    image: postgres:16
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
+      interval: 2s
+      timeout: 2s
+      retries: 120
+    env_file:
+      - env.d/kc_postgresql
+    volumes:
+      - ./data/keycloak:/var/lib/postgresql/data/pgdata
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3
+    restart: unless-stopped
+    command: ["start", "--import-realm"]
+    env_file:
+      - env.d/kc_postgresql
+      - env.d/keycloak
+    volumes:
+      - ./realm.json:/opt/keycloak/data/import/realm.json:ro
+    depends_on:
+      kc_postgresql:
+        condition: service_healthy
+
+  # Stockage des fichiers (compatible S3).
+  minio:
+    image: pgsty/silo
+    restart: unless-stopped
+    env_file:
+      - env.d/minio
+    entrypoint: ""
+    command: minio server /data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 20s
+      retries: 120
+    volumes:
+      - ./data/minio:/data
+
+  # Crée une fois le « seau » (bucket) qui contiendra les fichiers.
+  createbuckets:
+    image: pgsty/mc
+    env_file:
+      - env.d/minio
+      - env.d/common
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+      /usr/bin/mc alias set espaces http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      /usr/bin/mc mb --ignore-existing espaces/$${BUCKET_NAME} &&
+      /usr/bin/mc version enable espaces/$${BUCKET_NAME} &&
+      exit 0;"

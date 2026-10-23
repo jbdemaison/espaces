@@ -1,0 +1,36 @@
+{
+  "realm": "docs",
+  "enabled": true,
+  "displayName": "Espaces",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "bruteForceProtected": true,
+  "internationalizationEnabled": true,
+  "supportedLocales": ["fr", "en"],
+  "defaultLocale": "fr",
+  "clients": [
+    {
+      "clientId": "docs",
+      "name": "Espaces",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "@@CLIENT_SECRET@@",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "rootUrl": "https://@@DOCS_HOST@@",
+      "baseUrl": "https://@@DOCS_HOST@@",
+      "redirectUris": ["https://@@DOCS_HOST@@/*"],
+      "webOrigins": ["https://@@DOCS_HOST@@"],
+      "attributes": {
+        "post.logout.redirect.uris": "https://@@DOCS_HOST@@/*",
+        "access.token.lifespan": "900"
+      },
+      "defaultClientScopes": ["web-origins", "acr", "roles", "profile", "email"]
+    }
+  ]
+}

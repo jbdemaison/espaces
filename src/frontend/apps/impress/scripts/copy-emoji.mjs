@@ -3,13 +3,7 @@
  * Used as a pre-step for both `dev` (Turbopack) and `build` (webpack) so that
  * neither pipeline needs a webpack CopyPlugin for this purpose.
  */
-import {
-  chmodSync,
-  copyFileSync,
-  mkdirSync,
-  readdirSync,
-  rmSync,
-} from 'fs';
+import { chmodSync, copyFileSync, mkdirSync, readdirSync, rmSync } from 'fs';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
